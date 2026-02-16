@@ -46,6 +46,8 @@ npm run start:desktop
 
 This starts the webpack dev server on `https://localhost:3000` and opens Excel with the add-in sideloaded.
 
+For local shared-folder sideloading and staging manifest workflows, see [docs/SIDELOADING.md](./docs/SIDELOADING.md).
+
 ### Environment Variables
 
 Set these before starting the dev server to pre-populate the setup wizard:
@@ -106,6 +108,11 @@ On subsequent launches, the wizard is skipped — you go straight to the chat in
 | `npm run build:dev`     | Development build to `dist/`           |
 | `npm run start:desktop` | Build and sideload into Excel Desktop  |
 | `npm run stop`          | Stop debugging / unload the add-in     |
+| `npm run manifest:staging` | Generate staging manifest pointing to GitHub Pages |
+| `npm run sideload:share:setup` | Create local shared-folder catalog on Windows |
+| `npm run sideload:share:trust` | Register local share as trusted Office catalog |
+| `npm run sideload:share:publish` | Copy staging manifest into local shared folder |
+| `npm run sideload:share:cleanup` | Remove local share and trusted-catalog setup |
 | `npm run lint`          | Run ESLint                             |
 | `npm run lint:fix`      | Auto-fix ESLint issues                 |
 | `npm run format`        | Format code with Prettier              |
