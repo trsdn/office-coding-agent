@@ -62,8 +62,8 @@ Body content.`;
 name: InvalidHosts
 description: Agent with invalid host entries
 version: 1.0.0
-hosts: [excel, outlook, powerpoint]
-defaultForHosts: [outlook, excel]
+hosts: [excel, onenote, powerpoint]
+defaultForHosts: [onenote, excel]
 ---
 
 Body content.`;

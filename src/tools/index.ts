@@ -16,6 +16,7 @@ import type { Tool } from '@github/copilot-sdk';
 import type { OfficeHostApp } from '@/services/office/host';
 import { powerPointTools } from './powerpoint';
 import { wordTools } from './word';
+import { outlookTools } from './outlook';
 
 export { webFetchTool } from './general';
 
@@ -40,6 +41,7 @@ export const excelTools: Tool[] = allConfigs.flatMap(configs => createTools(conf
 
 export { powerPointTools } from './powerpoint';
 export { wordTools } from './word';
+export { outlookTools } from './outlook';
 
 export function getToolsForHost(host: OfficeHostApp): Tool[] {
   switch (host) {
@@ -49,6 +51,8 @@ export function getToolsForHost(host: OfficeHostApp): Tool[] {
       return powerPointTools.slice(0, MAX_TOOLS_PER_REQUEST);
     case 'word':
       return wordTools.slice(0, MAX_TOOLS_PER_REQUEST);
+    case 'outlook':
+      return outlookTools.slice(0, MAX_TOOLS_PER_REQUEST);
     default:
       return [];
   }

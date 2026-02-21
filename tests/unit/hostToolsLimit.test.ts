@@ -7,6 +7,11 @@ describe('host tool limits', () => {
     expect(Object.keys(tools).length).toBeLessThanOrEqual(MAX_TOOLS_PER_REQUEST);
   });
 
+  it('caps outlook tools at the provider maximum', () => {
+    const tools = getToolsForHost('outlook');
+    expect(Object.keys(tools).length).toBeLessThanOrEqual(MAX_TOOLS_PER_REQUEST);
+  });
+
   it('returns empty tools for unknown host', () => {
     const tools = getToolsForHost('unknown');
     expect(Object.keys(tools)).toHaveLength(0);
