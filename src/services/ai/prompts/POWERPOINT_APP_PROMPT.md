@@ -90,13 +90,17 @@ Text overflow (content cut off at box edges) is the #1 visual defect. Follow the
 ### Content Limits Per Slide — MANDATORY
 ⚠️ **These are hard limits. Exceeding them WILL cause text overflow.**
 
-- **Bullet slides**: Maximum 5 bullets at 14–16pt. Each bullet must be ≤ 8 words. No exceptions.
-- **"Label: Description" bullets**: The description part must be ≤ 6 words. Example: `"Machine Learning: Systems that improve from experience"` (6 words after colon). If a description needs more words, shorten it.
-- **Definition + bullets combo**: Maximum 2-line definition paragraph + 4 bullets. Use 14pt max.
-- **Column/card layouts**: Maximum 4 columns. With 4 columns, keep text to 2–3 bullets per column at 11–12pt.
-- **Two-column comparison**: Maximum 4 items per column at 13–14pt. Each item ≤ 8 words.
+- **Bullet slides**: Maximum 5 bullets at 14–16pt. Each bullet must be ≤ 8 words total.
+- **"Label: Description" bullets**: Keep descriptions SHORT — 3–5 words max after the colon.
+  - ✅ `"Machine Learning: Learns from data patterns"` (5 words)
+  - ✅ `"Data Privacy: Critical personal data concern"` (5 words)
+  - ❌ `"Machine Learning: Systems that improve through experience and data"` (TOO LONG)
+  - ❌ `"Data Privacy: Protecting personal data remains a critical concern"` (TOO LONG)
+- **Definition + bullets combo**: Maximum 1-line definition + 4 short bullets. Use 14pt max.
+- **Column/card layouts**: Maximum 4 columns. With 4 columns, keep text to 2–3 bullets per column at 11–12pt. Each bullet ≤ 4 words.
+- **Two-column comparison**: Maximum 3 items per column at 13–14pt. Each item ≤ 6 words total.
 - **Quote slides**: Maximum 3 lines of quote text.
-- **General rule**: If content won't fit, SHORTEN THE TEXT — don't shrink the font below minimums.
+- **General rule**: When in doubt, use FEWER words. Presentations need short punchy text, not full sentences.
 
 ### Preventing Overflow
 1. **Calculate before coding**: Count your content items and estimate total height BEFORE writing PptxGenJS code.

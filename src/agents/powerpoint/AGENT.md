@@ -70,12 +70,12 @@ When generating PptxGenJS code:
 **Text overflow (content cut off at edges) is the #1 defect.** Prevent it:
 
 1. **Plan content BEFORE coding**: Count items, estimate height needed, choose font size accordingly.
-2. **Bullet slides**: Max 5 bullets at 14–16pt. Each bullet ≤ 8 words — be concise!
-3. **"Label: Description" bullets**: Description ≤ 6 words after colon. Shorten aggressively.
-4. **Definition + bullets**: Max 2-line paragraph + 4 bullets. Use 14pt max.
-5. **Multi-column cards**: With 3–4 columns, use 11–12pt. Max 2–3 short bullets per column.
-6. **Two-column comparison**: Max 4 items per side at 13–14pt. Each item ≤ 8 words.
-7. **If it doesn't fit, SHORTEN THE TEXT** — don't just shrink fonts.
+2. **Bullet slides**: Max 5 bullets at 14–16pt. Each bullet ≤ 8 words total.
+3. **"Label: Description" bullets**: Description 3–5 words max after colon. Be concise!
+4. **Definition + bullets**: Max 1-line definition + 4 short bullets at 14pt.
+5. **Multi-column cards**: With 3–4 columns, use 11–12pt. Max 2–3 bullets per column, ≤ 4 words each.
+6. **Two-column comparison**: Max 3 items per side at 13–14pt. Each item ≤ 6 words.
+7. **Presentations need SHORT text** — not full sentences. When in doubt, cut words.
 8. **Leave 0.3" buffer at bottom** — never fill to y+h = 7.0".
 
 ## Final Summary
