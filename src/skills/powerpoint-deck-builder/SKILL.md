@@ -48,27 +48,48 @@ When building a deck, actively vary layouts across slides:
 
 **Rule:** In any deck of 5+ slides, never use the same layout pattern for more than 2 consecutive slides.
 
-## Iterative Verification Loop — CRITICAL
+## Iterative Verification Loop — MANDATORY FOR EVERY SLIDE
 
-**Do not declare success until you've completed at least one fix-and-verify cycle.**
+**You MUST run this loop for EVERY slide you create. No exceptions.**
 
-1. Create/modify slides
-2. `get_slide_image` → visually inspect the result
-3. **List issues found** (if none found, look again more critically)
-4. Fix issues
-5. **Re-verify affected slides** — one fix often creates another problem
-6. Repeat until a full pass reveals no new issues
+### After creating each slide:
+
+```
+REPEAT {
+  1. Call get_slide_image
+  2. Check ALL of these (yes/no for each):
+     □ Is ANY text cut off at bottom or sides?
+     □ Are ANY words breaking mid-word across lines?
+     □ Are elements overlapping?
+     □ Is there less than 0.3" margin at bottom?
+     □ Is ANY bullet longer than 8 words?
+     □ Are column bullets longer than 4 words?
+  3. If ANY check fails → FIX with add_slide_from_code + replaceSlideIndex
+  4. Go back to step 1
+} UNTIL all checks pass
+```
+
+### Fix actions by issue type:
+| Issue | Fix |
+|-------|-----|
+| Text cut off at bottom | Remove last bullet OR reduce font 2pt OR shorten all text |
+| Word breaking mid-word | Shorten that text OR use fewer columns (4→3, 3→2) |
+| Too many bullets | Remove least important bullet. Max 4 if intro paragraph exists |
+| Text too long | Rewrite shorter. "Diagnose per Bildanalyse" → "Bilddiagnose" |
+| Columns too narrow | Reduce column count (4→3) or shorten all bullets to 2-3 words |
+
+### Minimum verification calls per deck:
+- 5-slide deck = minimum 5 `get_slide_image` calls (one per slide)
+- Expect 2-3 fix iterations per slide = 10-15 `get_slide_image` calls total
+- **If you call fewer than 5 `get_slide_image` for a 5-slide deck, you skipped verification**
 
 ### What to look for during verification:
+- **Text overflow** — content cut off at edges or box boundaries (THE #1 DEFECT)
+- **Word breaking** — long words split mid-word due to narrow columns
 - **Overlapping elements** — text through shapes, stacked elements
-- **Text overflow** — content cut off at edges or box boundaries
 - **Cramped layout** — elements too close together (need breathing room)
-- **Uneven spacing** — large empty area in one place, cramped in another
-- **Insufficient margins** — content too close to slide edges
 - **Poor contrast** — light text on light background, or dark on dark
-- **Font size issues** — text too small to read in presentation mode (min 14pt for body)
 - **Inconsistent styling** — different fonts, colors, or sizes across similar elements
-- **Missing content** — did you include everything the user asked for?
 
 ## Content Sizing Rules — CRITICAL
 
@@ -93,15 +114,15 @@ Text overflow (content cut off at box edges) is the #1 visual defect. Follow the
 ### Content Limits Per Slide — MANDATORY
 ⚠️ **These are hard limits. Exceeding them WILL cause text overflow.**
 
-- **Bullet slides**: Maximum 5 bullets at 14–16pt. Each bullet must be ≤ 8 words total.
-- **"Label: Description" bullets**: Keep descriptions SHORT — 3–5 words max after the colon.
-  - ✅ `"Machine Learning: Learns from data patterns"` (5 words)
-  - ❌ `"Machine Learning: Systems that improve through experience and data"` (TOO LONG)
-- **Definition + bullets combo**: Maximum 1-line definition + 4 short bullets. Use 14pt max.
-- **Column/card layouts**: Default to 3 columns (not 4). Use 4 columns ONLY for single-word labels or icons. With 3 columns use 12–13pt, 2–3 bullets per column, each bullet ≤ 4 words.
-- **Two-column comparison**: Maximum 3 items per column at 13–14pt. Each item ≤ 6 words total.
-- **Quote slides**: Maximum 3 lines of quote text.
-- **General rule**: When in doubt, use FEWER words. Presentations need short punchy text, not full sentences.
+- **Bullet-only slides**: Maximum 5 bullets at 14–16pt. Each bullet ≤ 8 words.
+- **Definition/intro + bullets**: Maximum 4 bullets (NOT 5!). The intro paragraph eats vertical space — compensate by using fewer bullets.
+- **"Label: Description" bullets**: 3–5 words max after the colon.
+  - ✅ `"Machine Learning: Lernt aus Datenmustern"` (3 words)
+  - ❌ `"Machine Learning: Systeme die durch Erfahrung und Daten verbessert werden"` (TOO LONG)
+- **Column/card layouts**: Default 3 columns. 4 only for single-word labels. 12–13pt, 2–3 bullets, ≤ 4 words each.
+- **Two-column**: Max 3 items per side at 13–14pt, ≤ 6 words each.
+- **Quote slides**: Max 3 lines.
+- **General rule**: Fewer words > smaller fonts. Presentations need punchy text, not sentences.
 
 ### Preventing Overflow
 1. **Calculate before coding**: Count your content items and estimate total height BEFORE writing PptxGenJS code.

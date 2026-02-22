@@ -68,11 +68,14 @@ When source content has more items than space allows:
 - **Replace** with `add_slide_from_code` + `replaceSlideIndex` when the layout needs fundamental changes
 - Always `get_slide_image` after replacement to verify
 
-## Iterative Verification
+## Iterative Verification — MANDATORY
 
-**Never treat a redesigned slide as "done" after a single pass.**
+**You MUST call `get_slide_image` after EVERY modification. No exceptions.**
 
 1. Make changes
-2. `get_slide_image` → check result
-3. Look critically for: misaligned elements, overflow, inconsistent spacing, contrast issues
-4. Fix and re-verify — expect 2-3 iterations per slide
+2. `get_slide_image` → inspect result
+3. Check: text cut off? Words breaking? Overlap? Missing content?
+4. If ANY issue → fix with `replaceSlideIndex` → go back to step 2
+5. Only declare done when a full pass shows zero issues
+
+Expect 2-3 fix cycles per slide. If you verify a slide only once, you probably missed something.
