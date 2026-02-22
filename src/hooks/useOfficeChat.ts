@@ -221,6 +221,7 @@ export function useOfficeChat(host: OfficeHostApp) {
 
       try {
         const { orchestrateDeck } = await import('@/hooks/useDeckOrchestrator');
+        const deckMode = /\b(deep|detail|qualit)/i.test(userText) ? 'deep' as const : 'fast' as const;
         await orchestrateDeck(
           client,
           activeModel,
@@ -242,6 +243,7 @@ export function useOfficeChat(host: OfficeHostApp) {
             },
           },
           abortController.signal,
+          deckMode,
         );
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);

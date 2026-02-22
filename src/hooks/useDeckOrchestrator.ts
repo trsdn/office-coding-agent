@@ -38,20 +38,28 @@ export interface DeckOrchestratorCallbacks {
 }
 
 /**
- * Build the worker prompt for a specific slide task.
+ * Build the worker prompt for a batch of slides.
  */
-function buildWorkerPrompt(slide: SlidePlan, totalSlides: number): string {
-  return `${workerPromptRaw}
-
-## Slide Task
-
-Create slide ${String(slide.index + 1)} of ${String(totalSlides)}:
+function buildWorkerPrompt(slides: SlidePlan[], totalSlides: number): string {
+  const tasks = slides.map(slide =>
+    `### Slide ${String(slide.index + 1)} of ${String(totalSlides)}
 - **Title**: ${slide.title}
 - **Layout**: ${slide.layout}
-- **Content**: ${slide.content}
+- **Content**: ${slide.content}`
+  ).join('\n\n');
 
-Narrate your progress in the user's language. Start with "Slide ${String(slide.index + 1)}/${String(totalSlides)}: ${slide.title}…"`;
+  return `${workerPromptRaw}
+
+## Slide Tasks
+
+Create these slides in order. For EACH slide: create → verify (full + bottom quadrants) → fix if needed → next.
+
+${tasks}
+
+Narrate your progress in the user's language.`;
 }
+
+export type DeckMode = 'fast' | 'deep';
 
 /**
  * Run the full planner → worker orchestration.
@@ -61,6 +69,7 @@ Narrate your progress in the user's language. Start with "Slide ${String(slide.i
  * @param userPrompt - The user's original deck request
  * @param callbacks - Progress callbacks for UI updates
  * @param signal - Optional AbortSignal for cancellation
+ * @param mode - 'fast' (3 slides/worker) or 'deep' (1 slide/worker, max quality)
  */
 export async function orchestrateDeck(
   client: WebSocketCopilotClient,
@@ -68,9 +77,11 @@ export async function orchestrateDeck(
   userPrompt: string,
   callbacks: DeckOrchestratorCallbacks,
   signal?: AbortSignal,
+  mode: DeckMode = 'fast',
 ): Promise<void> {
+  const BATCH_SIZE = mode === 'deep' ? 1 : 3;
   // --- Phase 1: Planner ---
-  callbacks.onText('📋 Erstelle Plan…\n');
+  callbacks.onText(`📋 Erstelle Plan… (${mode === 'deep' ? 'Deep — 1 Slide/Worker' : 'Fast — 3 Slides/Worker'})\n`);
 
   const plannerResult = await runSubSession(
     client,
@@ -103,7 +114,7 @@ export async function orchestrateDeck(
   callbacks.onPlan(plan);
   callbacks.onText(`\n\n📋 Plan: ${String(plan.slides.length)} Slides\n`);
 
-  // --- Phase 2: Workers ---
+  // --- Phase 2: Workers (batched) ---
   const results: SlideProgress[] = plan.slides.map(slide => ({
     plan: slide,
     status: 'pending' as SlideStatus,
@@ -111,64 +122,52 @@ export async function orchestrateDeck(
 
   const pptTools = getToolsForHost('powerpoint');
 
-  for (let i = 0; i < plan.slides.length; i++) {
+  for (let batchStart = 0; batchStart < plan.slides.length; batchStart += BATCH_SIZE) {
     if (signal?.aborted) {
       callbacks.onText('\n⚠️ Abgebrochen.\n');
       break;
     }
 
-    const slide = plan.slides[i];
-    results[i].status = 'running';
-    callbacks.onSlideProgress(i, results[i]);
-    callbacks.onText(`\n🔄 Slide ${String(i + 1)}/${String(plan.slides.length)}: ${slide.title}\n`);
+    const batchEnd = Math.min(batchStart + BATCH_SIZE, plan.slides.length);
+    const batchSlides = plan.slides.slice(batchStart, batchEnd);
+    const batchLabel = batchSlides.map(s => `${String(s.index + 1)}`).join(', ');
 
-    const workerPrompt = buildWorkerPrompt(slide, plan.slides.length);
+    // Mark batch as running
+    for (let i = batchStart; i < batchEnd; i++) {
+      results[i].status = 'running';
+      callbacks.onSlideProgress(i, results[i]);
+    }
+    callbacks.onText(`\n🔄 Slides ${batchLabel}/${String(plan.slides.length)}…\n`);
+
+    const workerPrompt = buildWorkerPrompt(batchSlides, plan.slides.length);
+    const userMsg = batchSlides.map(s =>
+      `Slide ${String(s.index + 1)}: "${s.title}" — Layout: ${s.layout}. ${s.content}`
+    ).join('\n');
 
     const workerResult = await runSubSession(
       client,
-      {
-        model,
-        systemPrompt: workerPrompt,
-        tools: pptTools,
-      },
-      `Create slide ${String(slide.index)}: "${slide.title}" — Layout: ${slide.layout}. Content: ${slide.content}`,
+      { model, systemPrompt: workerPrompt, tools: pptTools },
+      userMsg,
       (event) => {
-        callbacks.onWorkerEvent?.(i, event);
+        callbacks.onWorkerEvent?.(batchStart, event);
         if (event.type === 'assistant.message_delta') {
           callbacks.onText(event.data.deltaContent);
         }
       },
     );
 
-    if (workerResult.success) {
-      results[i].status = 'done';
-      callbacks.onText(`\n✅ Slide ${String(i + 1)} fertig\n`);
-    } else {
-      // Retry once
-      callbacks.onText(`\n⚠️ Slide ${String(i + 1)} fehlgeschlagen, versuche erneut…\n`);
-      const retryResult = await runSubSession(
-        client,
-        { model, systemPrompt: workerPrompt, tools: pptTools },
-        `Create slide ${String(slide.index)}: "${slide.title}" — Layout: ${slide.layout}. Content: ${slide.content}`,
-        (event) => {
-          callbacks.onWorkerEvent?.(i, event);
-          if (event.type === 'assistant.message_delta') {
-            callbacks.onText(event.data.deltaContent);
-          }
-        },
-      );
-
-      if (retryResult.success) {
-        results[i].status = 'done';
-        callbacks.onText(`\n✅ Slide ${String(i + 1)} fertig (2. Versuch)\n`);
-      } else {
-        results[i].status = 'failed';
-        results[i].error = retryResult.error;
-        callbacks.onText(`\n❌ Slide ${String(i + 1)} fehlgeschlagen: ${retryResult.error ?? 'unknown'}\n`);
-      }
+    // Mark batch results
+    for (let i = batchStart; i < batchEnd; i++) {
+      results[i].status = workerResult.success ? 'done' : 'failed';
+      if (!workerResult.success) results[i].error = workerResult.error;
+      callbacks.onSlideProgress(i, results[i]);
     }
 
-    callbacks.onSlideProgress(i, results[i]);
+    if (workerResult.success) {
+      callbacks.onText(`\n✅ Slides ${batchLabel} fertig\n`);
+    } else {
+      callbacks.onText(`\n❌ Slides ${batchLabel} fehlgeschlagen: ${workerResult.error ?? 'unknown'}\n`);
+    }
   }
 
   // --- Phase 3: Summary ---
