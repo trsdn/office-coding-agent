@@ -21,6 +21,16 @@ export interface DeckPlan {
 /** Sentinel value to identify planner tool results */
 export const PLAN_TOOL_NAME = 'submit_plan';
 
+/** Stores the last plan received by the tool handler */
+let lastPlan: DeckPlan | null = null;
+
+/** Get and clear the last captured plan */
+export function getLastPlan(): DeckPlan | null {
+  const plan = lastPlan;
+  lastPlan = null;
+  return plan;
+}
+
 export const submitPlanTool: Tool = {
   name: PLAN_TOOL_NAME,
   description:
@@ -55,6 +65,10 @@ export const submitPlanTool: Tool = {
   },
   handler: async (args: unknown) => {
     const plan = args as DeckPlan;
+    // Capture the plan so the orchestrator can read it
+    if (Array.isArray(plan.slides) && plan.slides.length > 0) {
+      lastPlan = plan;
+    }
     return `Plan received: ${String(plan.slides?.length ?? 0)} slides.`;
   },
 };

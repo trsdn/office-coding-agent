@@ -8,7 +8,7 @@
 import type { WebSocketCopilotClient } from '@/lib/websocket-client';
 import type { SessionEvent } from '@github/copilot-sdk';
 import { runSubSession } from '@/lib/session-factory';
-import { submitPlanTool, extractPlanFromEvents } from '@/tools/planner';
+import { submitPlanTool, getLastPlan } from '@/tools/planner';
 import type { DeckPlan, SlidePlan } from '@/tools/planner';
 import { getToolsForHost } from '@/tools';
 import plannerPromptRaw from '@/services/ai/prompts/PLANNER_PROMPT.md?raw';
@@ -92,10 +92,8 @@ export async function orchestrateDeck(
     return;
   }
 
-  // Extract plan from tool call events
-  const plan = extractPlanFromEvents(
-    plannerResult.events as Array<{ type: string; data: Record<string, unknown> }>,
-  );
+  // Get plan captured by the submit_plan tool handler
+  const plan = getLastPlan();
 
   if (!plan || plan.slides.length === 0) {
     callbacks.onError('Planner did not produce a valid slide plan.');
