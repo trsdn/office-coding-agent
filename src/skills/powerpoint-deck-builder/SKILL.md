@@ -73,10 +73,13 @@ REPEAT {
 | Issue | Fix |
 |-------|-----|
 | Text cut off at bottom | Remove last bullet OR reduce font 2pt OR shorten all text |
-| Word breaking mid-word | Shorten that text OR use fewer columns (4→3, 3→2) |
+| Word breaking mid-word | Replace long word with shorter synonym. E.g., "Medikamentenentwicklung" → "Arzneimittel", "Verkehrsoptimierung" → "Verkehrsplanung", "Betrugserkennung" → "Betrugsprüfung" |
 | Too many bullets | Remove least important bullet. Max 4 if intro paragraph exists |
 | Text too long | Rewrite shorter. "Diagnose per Bildanalyse" → "Bilddiagnose" |
-| Columns too narrow | Reduce column count (4→3) or shorten all bullets to 2-3 words |
+| Columns too narrow | Reduce column count (4→3) or shorten ALL bullets to 2 words max |
+| Bottom text cut off | Move text up OR reduce content OR increase text box height |
+
+**Long compound words** (common in German, Dutch, Finnish) break layout in narrow columns. During verification, if you see a word split across lines, replace it with a shorter word — even if less precise. Visual clarity > terminological precision.
 
 ### Minimum verification calls per deck:
 - 5-slide deck = minimum 5 `get_slide_image` calls (one per slide)
@@ -119,7 +122,7 @@ Text overflow (content cut off at box edges) is the #1 visual defect. Follow the
 - **"Label: Description" bullets**: 3–5 words max after the colon.
   - ✅ `"Machine Learning: Lernt aus Datenmustern"` (3 words)
   - ❌ `"Machine Learning: Systeme die durch Erfahrung und Daten verbessert werden"` (TOO LONG)
-- **Column/card layouts**: Default 3 columns. 4 only for single-word labels. 12–13pt, 2–3 bullets, ≤ 4 words each.
+- **Column/card layouts**: Default 3 columns. 4 only for single-word labels. 12–13pt, 2–3 bullets, ≤ 4 words each. **No word in a column bullet should exceed 12 characters** — replace long words with shorter synonyms.
 - **Two-column**: Max 3 items per side at 13–14pt, ≤ 6 words each.
 - **Quote slides**: Max 3 lines.
 - **General rule**: Fewer words > smaller fonts. Presentations need punchy text, not sentences.

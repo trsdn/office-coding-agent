@@ -74,7 +74,7 @@ When generating PptxGenJS code:
 2. **Bullet-only slides**: Max 5 bullets at 14–16pt, ≤ 8 words each.
 3. **Definition/intro + bullets**: Max 4 bullets (NOT 5!). Intro takes space.
 4. **"Label: Description"**: 3–5 words max after colon.
-5. **Multi-column cards**: Default 3 columns. 12–13pt. Max 2–3 bullets, ≤ 4 words each.
+5. **Multi-column cards**: Default 3 columns. 12–13pt. ≤ 3 bullets, ≤ 4 words each. No word > 12 chars — use shorter synonyms.
 6. **Two-column**: Max 3 items per side, ≤ 6 words each.
 7. **Fewer words > smaller fonts**. Shorten text instead of shrinking below minimums.
 8. **Leave 0.3" buffer at bottom** — never fill to y+h = 7.0".
