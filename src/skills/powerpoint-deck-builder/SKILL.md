@@ -48,6 +48,7 @@ For each slide {
 | Problem | Fix |
 |---------|-----|
 | Text cut off at bottom | Shorten text or remove a bullet |
+| Text too small | Increase fontSize, reduce content to fit |
 | Word breaking mid-word | Use shorter synonym ("Medikamentenentwicklung" → "Arzneimittel") |
 | Too cramped | Reduce content or use fewer columns (4→3) |
 | Too many bullets with intro | Remove least important bullet |
