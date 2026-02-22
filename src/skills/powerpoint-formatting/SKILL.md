@@ -25,6 +25,7 @@ Activate this skill when creating or fixing slides with `add_slide_from_code`. C
 - **Positioning**: All x, y, w, h values are in inches. Standard slide is 10" × 7.5"
 - **Safe margins**: Keep content within 0.5" from slide edges (x ≥ 0.5, y ≥ 0.5, x+w ≤ 9.5, y+h ≤ 7.0)
 - **Leave 0.3" buffer at bottom** — never fill content to exactly y+h = 7.0"
+- **Always add `shrinkText: true`** to every `addText()` call — auto-shrinks text on overflow
 
 ### Font sizes
 | Element | Font Size |
@@ -74,7 +75,7 @@ slide.addText("Title", { color: "#4472C4" });  // WRONG — use "4472C4"
 slide.addText([
   { text: "Step 1: Do the first thing", options: { bullet: true, fontSize: 16 } },
   { text: "Step 2: Do the second thing", options: { bullet: true, fontSize: 16 } },
-], { x: 0.5, y: 2, w: 9, h: 4 });
+], { x: 0.5, y: 2, w: 9, h: 4, shrinkText: true });
 ```
 
 ### ✅ Label with colon in single string (THE ONLY correct way for label+description)
@@ -82,7 +83,7 @@ slide.addText([
 slide.addText([
   { text: "Machine Learning: Systems that learn from data", options: { bullet: true, fontSize: 14 } },
   { text: "Computer Vision: Machines interpreting visual info", options: { bullet: true, fontSize: 14 } },
-], { x: 0.5, y: 2, w: 9, h: 4 });
+], { x: 0.5, y: 2, w: 9, h: 4, shrinkText: true });
 ```
 
 ### ✅ Title + subtitle

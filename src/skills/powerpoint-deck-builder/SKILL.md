@@ -98,7 +98,7 @@ Text overflow (content cut off at box edges) is the #1 visual defect. Follow the
   - ✅ `"Machine Learning: Learns from data patterns"` (5 words)
   - ❌ `"Machine Learning: Systems that improve through experience and data"` (TOO LONG)
 - **Definition + bullets combo**: Maximum 1-line definition + 4 short bullets. Use 14pt max.
-- **Column/card layouts**: Maximum 4 columns. With 4 columns, keep text to 2–3 bullets per column at 11–12pt. Each bullet ≤ 4 words.
+- **Column/card layouts**: Default to 3 columns (not 4). Use 4 columns ONLY for single-word labels or icons. With 3 columns use 12–13pt, 2–3 bullets per column, each bullet ≤ 4 words.
 - **Two-column comparison**: Maximum 3 items per column at 13–14pt. Each item ≤ 6 words total.
 - **Quote slides**: Maximum 3 lines of quote text.
 - **General rule**: When in doubt, use FEWER words. Presentations need short punchy text, not full sentences.

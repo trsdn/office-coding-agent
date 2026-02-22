@@ -33,11 +33,11 @@ The `code` parameter receives a `slide` object. Common patterns:
 slide.addText("Title", { x: 0.5, y: 0.5, w: 9, h: 1, fontSize: 32, bold: true, color: "363636" });
 slide.addText("Subtitle", { x: 0.5, y: 1.6, w: 9, h: 0.6, fontSize: 18, color: "666666" });
 
-// Bullet list
+// Bullet list — always add shrinkText for overflow safety
 slide.addText([
   { text: "Point 1", options: { bullet: true } },
   { text: "Point 2", options: { bullet: true } },
-], { x: 0.5, y: 2.5, w: 9, h: 3, fontSize: 16 });
+], { x: 0.5, y: 2.5, w: 9, h: 3, fontSize: 16, shrinkText: true });
 
 // Table
 slide.addTable([["Header 1", "Header 2"], ["Row 1", "Data"]], { x: 0.5, y: 2, w: 9, fontSize: 13 });
@@ -49,8 +49,10 @@ slide.addShape("rect", { x: 1, y: 1, w: 3, h: 1, fill: { color: "4472C4" } });
 slide.addText([
   { text: "Machine Learning: Systems that learn from data", options: { bullet: true, fontSize: 14 } },
   { text: "Computer Vision: Machines interpreting visual information", options: { bullet: true, fontSize: 14 } },
-], { x: 0.5, y: 2, w: 9, h: 4 });
+], { x: 0.5, y: 2, w: 9, h: 4, shrinkText: true });
 ```
+
+**Always add `shrinkText: true`** to every `addText()` call. This auto-shrinks text when it overflows the container — essential safety net for multi-language content.
 
 **⚠️ CRITICAL: When a bullet has a label and description, ALWAYS combine them into ONE string with a colon separator.** Never use separate text runs for bold label + normal description — they merge without spacing (renders "LabelDescription"). Never use nested text arrays — they render as `[object Object]`.
 
@@ -97,7 +99,7 @@ Text overflow (content cut off at box edges) is the #1 visual defect. Follow the
   - ❌ `"Machine Learning: Systems that improve through experience and data"` (TOO LONG)
   - ❌ `"Data Privacy: Protecting personal data remains a critical concern"` (TOO LONG)
 - **Definition + bullets combo**: Maximum 1-line definition + 4 short bullets. Use 14pt max.
-- **Column/card layouts**: Maximum 4 columns. With 4 columns, keep text to 2–3 bullets per column at 11–12pt. Each bullet ≤ 4 words.
+- **Column/card layouts**: Default to 3 columns (not 4). Use 4 columns ONLY for single-word labels or icons. With 3 columns use 12–13pt, 2–3 bullets per column, each bullet ≤ 4 words.
 - **Two-column comparison**: Maximum 3 items per column at 13–14pt. Each item ≤ 6 words total.
 - **Quote slides**: Maximum 3 lines of quote text.
 - **General rule**: When in doubt, use FEWER words. Presentations need short punchy text, not full sentences.
