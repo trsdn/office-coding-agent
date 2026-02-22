@@ -45,3 +45,6 @@ Thumbs.db
 __pycache__/
 aitest-reports/tests-pptx/test.pptx
 tests-pptx/~$*
+tests-pptx/*.pptx
+tests-pptx/*.jpg
+tests-pptx/*.png

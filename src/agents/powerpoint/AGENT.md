@@ -62,7 +62,18 @@ When generating PptxGenJS code:
 - **Separate items**: Each bullet/step gets its own array element — never concatenate into one string
 - **Color format**: 6-digit hex without # prefix: `"4472C4"` not `"#4472C4"`
 - **Safe margins**: x ≥ 0.5, y ≥ 0.5, x+w ≤ 9.5, y+h ≤ 7.0
-- **Minimum fonts**: Title ≥ 28pt, subtitle ≥ 20pt, body ≥ 16pt, caption ≥ 12pt
+- **Minimum fonts**: Title ≥ 28pt, subtitle ≥ 18pt, body ≥ 14pt, cards/columns ≥ 11pt
+
+## Content Sizing — CRITICAL
+
+**Text overflow (content cut off at edges) is the #1 defect.** Prevent it:
+
+1. **Plan content BEFORE coding**: Count items, estimate height needed, choose font size accordingly.
+2. **Bullet slides**: Max 5-6 bullets at 14-16pt. Each bullet ≤ 10 words.
+3. **Multi-column cards**: With 3-4 columns, use 11-13pt font. Max 4 short bullets per column.
+4. **Two-column comparison**: Max 3-4 items per side at 13-14pt.
+5. **When in doubt, use smaller fonts** — 12-13pt is perfectly readable in presentations.
+6. **Leave 0.3" buffer at bottom** — never fill to y+h = 7.0".
 
 ## Final Summary
 

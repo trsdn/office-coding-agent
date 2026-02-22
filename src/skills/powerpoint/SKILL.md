@@ -188,7 +188,15 @@ slide.addText([
 - **Color values**: Use 6-digit hex without # prefix: `"4472C4"` not `"#4472C4"`
 - **Positioning**: All x, y, w, h values are in inches. Standard slide is 10" × 7.5"
 - **Safe margins**: Keep content within 0.5" from slide edges (x ≥ 0.5, y ≥ 0.5, x+w ≤ 9.5, y+h ≤ 7.0)
-- **Minimum font sizes**: Title ≥ 28pt, subtitle ≥ 20pt, body ≥ 16pt, captions ≥ 12pt
+- **Font sizes**: Title 28–36pt, subtitle 18–22pt, body/bullets 14–16pt, card/column content 11–13pt, table cells 11–13pt
+- **Leave 0.3" buffer at bottom** — never fill content to exactly y+h = 7.0"
+
+### Content Limits Per Slide (to prevent overflow)
+- **Bullet slides**: Max 5–6 bullets at 14–16pt. Each bullet ≤ 10 words.
+- **Multi-column cards**: Max 4 columns. With 4 columns, use 11–12pt and max 3–4 short bullets each.
+- **Two-column comparison**: Max 3–4 items per column at 13–14pt.
+- **Quote slides**: Max 3 lines of quote text.
+- **If content exceeds limits**: Reduce font size, shorten text, or split across multiple slides.
 
 ## Always-On Defaults
 
