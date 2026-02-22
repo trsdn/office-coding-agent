@@ -156,23 +156,76 @@ const getPresentationContent: Tool = {
   },
 };
 
+// Crop a base64 PNG to a region using OffscreenCanvas (available in modern browsers)
+function cropImage(
+  base64: string,
+  region: 'full' | 'top' | 'bottom' | 'left' | 'right',
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const w = img.width;
+      const h = img.height;
+      let sx = 0,
+        sy = 0,
+        sw = w,
+        sh = h;
+      switch (region) {
+        case 'top':
+          sh = Math.round(h * 0.5);
+          break;
+        case 'bottom':
+          sy = Math.round(h * 0.5);
+          sh = h - sy;
+          break;
+        case 'left':
+          sw = Math.round(w * 0.5);
+          break;
+        case 'right':
+          sx = Math.round(w * 0.5);
+          sw = w - sx;
+          break;
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = sw;
+      canvas.height = sh;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        reject(new Error('Canvas 2D context unavailable'));
+        return;
+      }
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.onerror = () => reject(new Error('Failed to load image for cropping'));
+    img.src = `data:image/png;base64,${base64}`;
+  });
+}
+
 const getSlideImage: Tool = {
   name: 'get_slide_image',
   description:
-    'Capture a slide as a PNG image to verify visual quality. Returns a base64 data URI. Use this after every slide creation to check for text overflow, especially at the bottom edge of text boxes and cards.',
+    'Capture a slide (or region) as a PNG image to verify visual quality. Use region="bottom" to zoom into the bottom half where text overflow usually occurs. Returns a base64 data URI.',
   parameters: {
     type: 'object',
     properties: {
       slideIndex: { type: 'number', description: '0-based slide index.' },
-      width: {
-        type: 'number',
-        description: 'Image width in pixels. Aspect ratio is preserved. Default: 800. Higher values show more detail for overflow detection.',
+      region: {
+        type: 'string',
+        enum: ['full', 'top', 'bottom', 'left', 'right'],
+        description:
+          'Which part of the slide to capture. "full" = entire slide (default). "bottom" = bottom half (best for checking text overflow). "top"/"left"/"right" for other regions.',
       },
     },
     required: ['slideIndex'],
   },
   handler: async (args: unknown): Promise<ToolResultObject | string> => {
-    const { slideIndex, width = 800 } = (args ?? {}) as { slideIndex: number; width?: number };
+    const { slideIndex, region = 'full' } = (args ?? {}) as {
+      slideIndex: number;
+      region?: 'full' | 'top' | 'bottom' | 'left' | 'right';
+    };
+    // Use higher resolution when cropping a region (half the data since we crop 50%)
+    const captureWidth = region === 'full' ? 600 : 960;
     try {
       return await PowerPoint.run(async context => {
         const slides = context.presentation.slides;
@@ -190,23 +243,39 @@ const getSlideImage: Tool = {
         }
 
         const slide = slides.items[slideIndex];
-        const imageResult = slide.getImageAsBase64({ width: Math.min(width, 1200) });
+        const imageResult = slide.getImageAsBase64({ width: captureWidth });
         await context.sync();
 
         const base64 = imageResult.value;
-        const dataUri = `data:image/png;base64,${base64}`;
 
-        // Copilot CLI has a tool output size limit — warn if image is very large
-        if (dataUri.length > 200000) {
+        // Crop to requested region
+        let dataUri: string;
+        if (region !== 'full') {
+          dataUri = await cropImage(base64, region);
+        } else {
+          dataUri = `data:image/png;base64,${base64}`;
+        }
+
+        // If still too large after cropping, re-capture at smaller width
+        if (dataUri.length > 150000) {
+          const smallImage = slide.getImageAsBase64({ width: 400 });
+          await context.sync();
+          let smallUri: string;
+          if (region !== 'full') {
+            smallUri = await cropImage(smallImage.value, region);
+          } else {
+            smallUri = `data:image/png;base64,${smallImage.value}`;
+          }
           return {
-            textResultForLlm: `Slide ${String(slideIndex + 1)} image captured (${String(Math.round(dataUri.length / 1024))} KB) but may be too large to display inline. The image was saved successfully. Try a smaller width (e.g. 200) to reduce size.\n\n${dataUri}`,
+            textResultForLlm: `[Auto-reduced to 400px because image was ${String(Math.round(dataUri.length / 1024))}KB — region: ${region}]\n${smallUri}`,
             resultType: 'success',
             toolTelemetry: {},
           };
         }
 
+        const label = region === 'full' ? '' : ` [region: ${region}]`;
         return {
-          textResultForLlm: dataUri,
+          textResultForLlm: `${dataUri}${label}`,
           resultType: 'success',
           toolTelemetry: {},
         };

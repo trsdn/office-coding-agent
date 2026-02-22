@@ -36,20 +36,18 @@ Activate this skill when creating new presentations or adding multiple slides.
 ```
 For each slide {
   1. Create with add_slide_from_code
-  2. Call get_slide_image — look at the result
-  3. CHECK THE BOTTOM EDGE FIRST:
-     Is any text cut off at the bottom of any text box, card, or column?
-     This is the #1 defect. Even one missing line = must fix.
-  4. Then check: words breaking? Overlapping? Cramped? Empty space?
-  5. If ANY issue → fix it → call get_slide_image again → repeat
-  6. Move to next slide only when it looks right
+  2. Call get_slide_image(region: "full") — overview check
+  3. Call get_slide_image(region: "bottom") — zoomed bottom half
+     This catches text overflow that's invisible in the full view!
+  4. If ANY issue → fix it → verify again (both full + bottom)
+  5. Move to next slide only when it looks right
 }
 ```
 
 ### Common fixes:
 | Problem | Fix |
 |---------|-----|
-| Text cut off | Shorten text or remove a bullet |
+| Text cut off at bottom | Shorten text or remove a bullet |
 | Word breaking mid-word | Use shorter synonym ("Medikamentenentwicklung" → "Arzneimittel") |
 | Too cramped | Reduce content or use fewer columns (4→3) |
 | Too many bullets with intro | Remove least important bullet |
