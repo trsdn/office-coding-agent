@@ -218,12 +218,13 @@ async function handleConnection(ws) {
         }));
 
         // Load MCP tools from configured servers (executed server-side)
+        const mcpTrackingKey = `__pending_${Date.now()}_${Math.random().toString(36).slice(2)}`;
         if (mcpServers && mcpServers.length > 0) {
           try {
             const { tools: mcpTools, clients: mcpClients } = await loadMcpTools(mcpServers);
             tools.push(...mcpTools);
             // Track clients for cleanup when session is destroyed
-            sessionMcpClients.set(sessionId || '__pending__', mcpClients);
+            sessionMcpClients.set(mcpTrackingKey, mcpClients);
           } catch (err) {
             console.warn('[proxy] MCP tool loading failed:', err.message);
           }
@@ -246,10 +247,10 @@ async function handleConnection(ws) {
 
         sessions.set(session.sessionId, session);
         markHealthy();
-        // Re-key MCP clients from pending to actual session ID
-        const pendingClients = sessionMcpClients.get('__pending__');
+        // Re-key MCP clients from temp tracking key to actual session ID
+        const pendingClients = sessionMcpClients.get(mcpTrackingKey);
         if (pendingClients) {
-          sessionMcpClients.delete('__pending__');
+          sessionMcpClients.delete(mcpTrackingKey);
           sessionMcpClients.set(session.sessionId, pendingClients);
         }
         console.log(`[proxy] session.create succeeded (sessionId=${session.sessionId})`);

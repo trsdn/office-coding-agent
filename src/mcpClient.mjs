@@ -16,6 +16,12 @@ import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
 /**
+ * Commands allowed for stdio MCP servers.
+ * Only these executables may be spawned as subprocesses.
+ */
+export const ALLOWED_STDIO_COMMANDS = new Set(['npx', 'node', 'python', 'python3']);
+
+/**
  * Connect to a list of MCP servers and return Copilot SDK-compatible tools.
  *
  * @param {Array<{ name: string, url?: string, transport: 'http'|'sse'|'stdio', headers?: Record<string, string>, command?: string, args?: string[] }>} mcpServers
@@ -35,6 +41,13 @@ export async function loadMcpTools(mcpServers) {
       if (server.transport === 'stdio') {
         if (!server.command) {
           console.warn(`[mcp] Server '${server.name}': stdio transport requires a command, skipping`);
+          continue;
+        }
+        const baseName = server.command.replace(/\\/g, '/').split('/').pop();
+        if (!ALLOWED_STDIO_COMMANDS.has(baseName)) {
+          console.warn(
+            `[mcp] Server '${server.name}': command '${server.command}' is not in the allowlist (${[...ALLOWED_STDIO_COMMANDS].join(', ')}), skipping`
+          );
           continue;
         }
         transport = new StdioClientTransport({
