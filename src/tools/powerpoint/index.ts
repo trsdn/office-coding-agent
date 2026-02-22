@@ -159,20 +159,20 @@ const getPresentationContent: Tool = {
 const getSlideImage: Tool = {
   name: 'get_slide_image',
   description:
-    'Capture a slide as a PNG image to see its visual design, layout, colors, and styling. Requires PowerPoint on Windows (16.0.17628+), Mac (16.85+), or PowerPoint on the web.',
+    'Capture a slide as a PNG image to see its visual design, layout, colors, and styling. Returns a base64 data URI. Use a small width (200-400) to keep output manageable. Requires PowerPoint on Windows (16.0.17628+), Mac (16.85+), or PowerPoint on the web.',
   parameters: {
     type: 'object',
     properties: {
       slideIndex: { type: 'number', description: '0-based slide index.' },
       width: {
         type: 'number',
-        description: 'Image width in pixels. Aspect ratio is preserved. Default: 800.',
+        description: 'Image width in pixels. Aspect ratio is preserved. Default: 320. Use smaller values (200-400) for faster results.',
       },
     },
     required: ['slideIndex'],
   },
   handler: async (args: unknown): Promise<ToolResultObject | string> => {
-    const { slideIndex, width = 800 } = (args ?? {}) as { slideIndex: number; width?: number };
+    const { slideIndex, width = 320 } = (args ?? {}) as { slideIndex: number; width?: number };
     try {
       return await PowerPoint.run(async context => {
         const slides = context.presentation.slides;
@@ -190,11 +190,23 @@ const getSlideImage: Tool = {
         }
 
         const slide = slides.items[slideIndex];
-        const imageResult = slide.getImageAsBase64({ width });
+        const imageResult = slide.getImageAsBase64({ width: Math.min(width, 400) });
         await context.sync();
 
+        const base64 = imageResult.value;
+        const dataUri = `data:image/png;base64,${base64}`;
+
+        // Copilot CLI has a tool output size limit — warn if image is very large
+        if (dataUri.length > 50000) {
+          return {
+            textResultForLlm: `Slide ${String(slideIndex + 1)} image captured (${String(Math.round(dataUri.length / 1024))} KB) but may be too large to display inline. The image was saved successfully. Try a smaller width (e.g. 200) to reduce size.\n\n${dataUri}`,
+            resultType: 'success',
+            toolTelemetry: {},
+          };
+        }
+
         return {
-          textResultForLlm: `data:image/png;base64,${imageResult.value}`,
+          textResultForLlm: dataUri,
           resultType: 'success',
           toolTelemetry: {},
         };
