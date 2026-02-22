@@ -44,6 +44,8 @@ export interface UserSettings {
   activeMcpServerNames: string[] | null;
   /** Whether the built-in WorkIQ integration is enabled. */
   workiqEnabled: boolean;
+  /** Optional separate model for WorkIQ sessions. null = use activeModel. */
+  workiqModel: string | null;
 }
 
 /** Default settings applied on first run */
@@ -56,6 +58,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   importedMcpServers: [],
   activeMcpServerNames: null,
   workiqEnabled: false,
+  workiqModel: null,
 };
 
 /** Built-in WorkIQ MCP server config */

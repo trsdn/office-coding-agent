@@ -25,9 +25,7 @@ import { detectOfficeHost } from '@/services/office/host';
 export const Thread: FC = () => {
   return (
     <ThreadPrimitive.Root className="aui-root aui-thread-root flex flex-1 min-h-0 flex-col bg-background">
-      <ThreadPrimitive.Viewport
-        className="aui-thread-viewport relative flex flex-1 min-h-0 flex-col overflow-x-hidden overflow-y-auto scroll-smooth px-3 pt-3"
-      >
+      <ThreadPrimitive.Viewport className="aui-thread-viewport relative flex flex-1 min-h-0 flex-col overflow-x-hidden overflow-y-auto scroll-smooth px-3 pt-3">
         <AuiIf condition={s => s.thread.isEmpty}>
           <ThreadWelcome />
         </AuiIf>
@@ -69,32 +67,36 @@ interface SuggestionItem {
 
 const SUGGESTIONS_BY_HOST: Record<string, SuggestionItem[]> = {
   excel: [
-    { prompt: 'Summarize my data', autoSend: true },
+    { prompt: 'Analyze my data and show key insights', autoSend: true },
     { prompt: 'Create a chart from selected data', autoSend: true },
-    { prompt: 'Format the table as currency', autoSend: true },
+    { prompt: 'Add formulas to calculate totals and averages', autoSend: true },
     { prompt: 'Find and highlight duplicates', autoSend: true },
-    { prompt: 'Add a formula to calculate totals', autoSend: true },
     { prompt: 'Clean up and organize my sheet', autoSend: true },
+    { prompt: 'Create a pivot table from my data', autoSend: true },
   ],
   outlook: [
     { prompt: 'Summarize this email', autoSend: true },
-    { prompt: 'Draft a reply', autoSend: true },
-    { prompt: 'List the attachments', autoSend: true },
-    { prompt: 'Extract action items from this email', autoSend: true },
+    { prompt: 'Draft a professional reply', autoSend: true },
+    { prompt: 'Extract action items and deadlines', autoSend: true },
     { prompt: 'Translate this email to English', autoSend: true },
-    { prompt: 'Who is this email from?', autoSend: true },
+    { prompt: 'Create a meeting from this email', autoSend: true },
+    { prompt: 'Analyze the attachments', autoSend: true },
   ],
   powerpoint: [
     { prompt: 'Summarize this presentation', autoSend: true },
-    { prompt: 'Add a new slide', autoSend: true },
+    { prompt: 'Create 5 slides about a topic (deep)', autoSend: true },
+    { prompt: 'Redesign the current slide', autoSend: true },
+    { prompt: 'Add speaker notes to all slides', autoSend: true },
     { prompt: 'Get an overview of all slides', autoSend: true },
-    { prompt: 'Update the speaker notes', autoSend: true },
+    { prompt: 'Fix formatting and layout issues', autoSend: true },
   ],
   word: [
     { prompt: 'Summarize this document', autoSend: true },
-    { prompt: 'Find and replace text', autoSend: true },
-    { prompt: 'Get the document structure', autoSend: true },
-    { prompt: 'Insert a table', autoSend: true },
+    { prompt: 'Create a report outline (gründlich)', autoSend: true },
+    { prompt: 'Format headings and styles consistently', autoSend: true },
+    { prompt: 'Insert a table with sample data', autoSend: true },
+    { prompt: 'Proofread and improve the writing', autoSend: true },
+    { prompt: 'Add headers, footers, and page numbers', autoSend: true },
   ],
 };
 
