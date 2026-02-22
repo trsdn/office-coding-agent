@@ -12,44 +12,72 @@ async function getSlideCount(): Promise<number> {
   });
 }
 
+async function loadShapeTexts(
+  shapes: PowerPoint.ShapeCollection | PowerPoint.ShapeScopedCollection,
+  context: PowerPoint.RequestContext
+): Promise<string[]> {
+  shapes.load('items');
+  await context.sync();
+
+  // Load text and type info for all shapes, including grouped shapes
+  const groupShapes: PowerPoint.Shape[] = [];
+  for (const shape of shapes.items) {
+    shape.load('type');
+    try {
+      shape.textFrame.textRange.load('text');
+    } catch {
+      // shape may not have a textFrame (SmartArt, charts, etc.)
+    }
+  }
+  await context.sync();
+
+  // Collect texts from top-level shapes
+  const texts: string[] = [];
+  for (const shape of shapes.items) {
+    try {
+      const text = shape.textFrame.textRange.text?.trim() ?? '';
+      if (text.length > 0) texts.push(text);
+    } catch {
+      // no textFrame
+    }
+    // Queue grouped shapes for recursive loading
+    if (shape.type === PowerPoint.ShapeType.group) {
+      groupShapes.push(shape);
+    }
+  }
+
+  // Recurse into group shapes
+  for (const group of groupShapes) {
+    try {
+      const groupTexts = await loadShapeTexts(group.group.shapes, context);
+      texts.push(...groupTexts);
+    } catch {
+      // group access may fail for SmartArt or unsupported shape types
+    }
+  }
+
+  return texts;
+}
+
 async function getSlideTextContent(startIdx: number, endIdx: number): Promise<string[]> {
   return PowerPoint.run(async context => {
     const slides = context.presentation.slides;
     slides.load('items');
     await context.sync();
 
-    const slideRefs = slides.items.slice(startIdx, endIdx + 1);
-    for (const slide of slideRefs) {
-      slide.shapes.load('items');
-    }
-    await context.sync();
-
-    for (const slide of slideRefs) {
-      for (const shape of slide.shapes.items) {
-        try {
-          shape.textFrame.textRange.load('text');
-        } catch {
-          // shape may not have a textFrame
-        }
-      }
-    }
-    await context.sync();
-
     const results: string[] = [];
+    const slideRefs = slides.items.slice(startIdx, endIdx + 1);
+
     for (let i = 0; i < slideRefs.length; i++) {
-      const slide = slideRefs[i];
-      const texts = slide.shapes.items
-        .map(s => {
-          try {
-            return s.textFrame.textRange.text?.trim() ?? '';
-          } catch {
-            return '';
-          }
-        })
-        .filter(t => t.length > 0);
-      results.push(
-        `Slide ${startIdx + i + 1}: ${texts.length > 0 ? texts.join(' | ') : '(no text)'}`
+      const texts = await loadShapeTexts(slideRefs[i].shapes, context);
+      const hasGraphics = slideRefs[i].shapes.items.some(
+        s => s.type === PowerPoint.ShapeType.group || s.type === PowerPoint.ShapeType.smartArt
       );
+      let label = texts.length > 0 ? texts.join(' | ') : '(no text)';
+      if (texts.length === 0 && hasGraphics) {
+        label = '(contains graphics/SmartArt — use get_slide_image to see visual content)';
+      }
+      results.push(`Slide ${startIdx + i + 1}: ${label}`);
     }
     return results;
   });
