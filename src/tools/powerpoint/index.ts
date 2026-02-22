@@ -661,15 +661,759 @@ const duplicateSlide: Tool = {
   },
 };
 
+const getSlideShapes: Tool = {
+  name: 'get_slide_shapes',
+  description:
+    'List all shapes on a slide with their index, type, position, size, text, and fill color. Use this to understand the layout before modifying individual shapes.',
+  parameters: {
+    type: 'object',
+    properties: {
+      slideIndex: { type: 'number', description: '0-based slide index.' },
+    },
+    required: ['slideIndex'],
+  },
+  handler: async (args: unknown): Promise<ToolResultObject | string> => {
+    const { slideIndex } = (args ?? {}) as { slideIndex: number };
+    try {
+      return await PowerPoint.run(async context => {
+        const slides = context.presentation.slides;
+        slides.load('items');
+        await context.sync();
+
+        const slideCount = slides.items.length;
+        if (slideIndex < 0 || slideIndex >= slideCount) {
+          return `Invalid slideIndex ${String(slideIndex)}. Must be 0-${String(slideCount - 1)}.`;
+        }
+
+        const slide = slides.items[slideIndex];
+        const shapes = slide.shapes;
+        shapes.load('items');
+        await context.sync();
+
+        if (shapes.items.length === 0) return `Slide ${String(slideIndex + 1)} has no shapes.`;
+
+        const lines = [
+          `Shapes on Slide ${String(slideIndex + 1)} (${String(shapes.items.length)} total)`,
+          '='.repeat(50),
+        ];
+
+        for (let i = 0; i < shapes.items.length; i++) {
+          const shape = shapes.items[i];
+          // Load properties individually to avoid batch failures
+          try {
+            shape.load('name,left,top,width,height');
+            await context.sync();
+          } catch {
+            lines.push(`\n${String(i)}. (unable to read shape properties)`);
+            continue;
+          }
+
+          const info: string[] = [
+            `\n${String(i)}. "${shape.name}"`,
+            `   Position: left=${String(Math.round(shape.left))}, top=${String(Math.round(shape.top))}`,
+            `   Size: width=${String(Math.round(shape.width))}, height=${String(Math.round(shape.height))}`,
+          ];
+
+          // Try to read text
+          try {
+            shape.textFrame.textRange.load('text');
+            await context.sync();
+            const text = shape.textFrame.textRange.text?.trim() ?? '';
+            if (text.length > 0) {
+              const preview = text.length > 80 ? `${text.substring(0, 80)}...` : text;
+              info.push(`   Text: "${preview}"`);
+            }
+          } catch {
+            // no textFrame
+          }
+
+          // Try to read fill color
+          try {
+            shape.fill.load('foregroundColor,type');
+            await context.sync();
+            if (shape.fill.foregroundColor) {
+              info.push(`   Fill: ${shape.fill.foregroundColor}`);
+            }
+          } catch {
+            // no fill info
+          }
+
+          lines.push(...info);
+        }
+
+        return lines.join('\n');
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { textResultForLlm: msg, resultType: 'failure', error: msg, toolTelemetry: {} };
+    }
+  },
+};
+
+const updateShapeStyle: Tool = {
+  name: 'update_shape_style',
+  description:
+    'Change the visual style of an existing shape: fill color, outline color, outline width, font color, font size, bold, italic. Only specified properties are changed — others are preserved.',
+  parameters: {
+    type: 'object',
+    properties: {
+      slideIndex: { type: 'number', description: '0-based slide index.' },
+      shapeIndex: { type: 'number', description: '0-based shape index (use get_slide_shapes to find it).' },
+      fillColor: {
+        type: 'string',
+        description: 'Fill color as hex (e.g. "FF0000" for red, "4472C4" for blue). Use "transparent" to remove fill.',
+      },
+      outlineColor: { type: 'string', description: 'Outline color as hex.' },
+      outlineWidth: { type: 'number', description: 'Outline width in points.' },
+      fontColor: { type: 'string', description: 'Font color as hex for all text in the shape.' },
+      fontSize: { type: 'number', description: 'Font size in points for all text in the shape.' },
+      bold: { type: 'boolean', description: 'Set text bold.' },
+      italic: { type: 'boolean', description: 'Set text italic.' },
+    },
+    required: ['slideIndex', 'shapeIndex'],
+  },
+  handler: async (args: unknown): Promise<ToolResultObject | string> => {
+    const a = (args ?? {}) as {
+      slideIndex: number;
+      shapeIndex: number;
+      fillColor?: string;
+      outlineColor?: string;
+      outlineWidth?: number;
+      fontColor?: string;
+      fontSize?: number;
+      bold?: boolean;
+      italic?: boolean;
+    };
+    try {
+      return await PowerPoint.run(async context => {
+        const slides = context.presentation.slides;
+        slides.load('items');
+        await context.sync();
+
+        const slideCount = slides.items.length;
+        if (a.slideIndex < 0 || a.slideIndex >= slideCount) {
+          return `Invalid slideIndex ${String(a.slideIndex)}. Must be 0-${String(slideCount - 1)}.`;
+        }
+
+        const slide = slides.items[a.slideIndex];
+        slide.shapes.load('items');
+        await context.sync();
+
+        const shapeCount = slide.shapes.items.length;
+        if (a.shapeIndex < 0 || a.shapeIndex >= shapeCount) {
+          return `Invalid shapeIndex ${String(a.shapeIndex)}. Slide has ${String(shapeCount)} shapes.`;
+        }
+
+        const shape = slide.shapes.items[a.shapeIndex];
+        const changes: string[] = [];
+
+        // Fill color
+        if (a.fillColor !== undefined) {
+          if (a.fillColor === 'transparent') {
+            shape.fill.clear();
+            changes.push('fill cleared');
+          } else {
+            shape.fill.setSolidColor(a.fillColor);
+            changes.push(`fill=${a.fillColor}`);
+          }
+        }
+
+        // Outline
+        if (a.outlineColor !== undefined) {
+          shape.lineFormat.color = a.outlineColor;
+          changes.push(`outline color=${a.outlineColor}`);
+        }
+        if (a.outlineWidth !== undefined) {
+          shape.lineFormat.weight = a.outlineWidth;
+          changes.push(`outline width=${String(a.outlineWidth)}pt`);
+        }
+
+        // Font properties
+        if (a.fontColor !== undefined || a.fontSize !== undefined || a.bold !== undefined || a.italic !== undefined) {
+          try {
+            const font = shape.textFrame.textRange.font;
+            if (a.fontColor !== undefined) {
+              font.color = a.fontColor;
+              changes.push(`font color=${a.fontColor}`);
+            }
+            if (a.fontSize !== undefined) {
+              font.size = a.fontSize;
+              changes.push(`font size=${String(a.fontSize)}pt`);
+            }
+            if (a.bold !== undefined) {
+              font.bold = a.bold;
+              changes.push(`bold=${String(a.bold)}`);
+            }
+            if (a.italic !== undefined) {
+              font.italic = a.italic;
+              changes.push(`italic=${String(a.italic)}`);
+            }
+          } catch {
+            changes.push('(font changes skipped — shape has no text)');
+          }
+        }
+
+        await context.sync();
+
+        return `Updated shape ${String(a.shapeIndex)} on slide ${String(a.slideIndex + 1)}: ${changes.join(', ')}.`;
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { textResultForLlm: msg, resultType: 'failure', error: msg, toolTelemetry: {} };
+    }
+  },
+};
+
+const moveResizeShape: Tool = {
+  name: 'move_resize_shape',
+  description:
+    'Move and/or resize an existing shape on a slide. Only specified properties are changed — others are preserved. Coordinates are in points (1 inch = 72 points).',
+  parameters: {
+    type: 'object',
+    properties: {
+      slideIndex: { type: 'number', description: '0-based slide index.' },
+      shapeIndex: { type: 'number', description: '0-based shape index (use get_slide_shapes to find it).' },
+      left: { type: 'number', description: 'New left position in points.' },
+      top: { type: 'number', description: 'New top position in points.' },
+      width: { type: 'number', description: 'New width in points.' },
+      height: { type: 'number', description: 'New height in points.' },
+    },
+    required: ['slideIndex', 'shapeIndex'],
+  },
+  handler: async (args: unknown): Promise<ToolResultObject | string> => {
+    const a = (args ?? {}) as {
+      slideIndex: number;
+      shapeIndex: number;
+      left?: number;
+      top?: number;
+      width?: number;
+      height?: number;
+    };
+    try {
+      return await PowerPoint.run(async context => {
+        const slides = context.presentation.slides;
+        slides.load('items');
+        await context.sync();
+
+        const slideCount = slides.items.length;
+        if (a.slideIndex < 0 || a.slideIndex >= slideCount) {
+          return `Invalid slideIndex ${String(a.slideIndex)}. Must be 0-${String(slideCount - 1)}.`;
+        }
+
+        const slide = slides.items[a.slideIndex];
+        slide.shapes.load('items');
+        await context.sync();
+
+        const shapeCount = slide.shapes.items.length;
+        if (a.shapeIndex < 0 || a.shapeIndex >= shapeCount) {
+          return `Invalid shapeIndex ${String(a.shapeIndex)}. Slide has ${String(shapeCount)} shapes.`;
+        }
+
+        const shape = slide.shapes.items[a.shapeIndex];
+        const changes: string[] = [];
+
+        if (a.left !== undefined) {
+          shape.left = a.left;
+          changes.push(`left=${String(a.left)}`);
+        }
+        if (a.top !== undefined) {
+          shape.top = a.top;
+          changes.push(`top=${String(a.top)}`);
+        }
+        if (a.width !== undefined) {
+          shape.width = a.width;
+          changes.push(`width=${String(a.width)}`);
+        }
+        if (a.height !== undefined) {
+          shape.height = a.height;
+          changes.push(`height=${String(a.height)}`);
+        }
+
+        await context.sync();
+
+        return changes.length > 0
+          ? `Moved/resized shape ${String(a.shapeIndex)} on slide ${String(a.slideIndex + 1)}: ${changes.join(', ')}.`
+          : 'No changes specified.';
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { textResultForLlm: msg, resultType: 'failure', error: msg, toolTelemetry: {} };
+    }
+  },
+};
+
+const deleteSlide: Tool = {
+  name: 'delete_slide',
+  description: 'Delete a slide from the presentation by its 0-based index.',
+  parameters: {
+    type: 'object',
+    properties: {
+      slideIndex: { type: 'number', description: '0-based slide index to delete.' },
+    },
+    required: ['slideIndex'],
+  },
+  handler: async (args: unknown): Promise<ToolResultObject | string> => {
+    const { slideIndex } = (args ?? {}) as { slideIndex: number };
+    try {
+      return await PowerPoint.run(async context => {
+        const slides = context.presentation.slides;
+        slides.load('items');
+        await context.sync();
+        const slideCount = slides.items.length;
+        if (slideIndex < 0 || slideIndex >= slideCount) {
+          return `Invalid slideIndex ${String(slideIndex)}. Must be 0-${String(slideCount - 1)}.`;
+        }
+        slides.items[slideIndex].delete();
+        await context.sync();
+        return `Deleted slide ${String(slideIndex + 1)}. Presentation now has ${String(slideCount - 1)} slides.`;
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { textResultForLlm: msg, resultType: 'failure', error: msg, toolTelemetry: {} };
+    }
+  },
+};
+
+const moveSlide: Tool = {
+  name: 'move_slide',
+  description: 'Move a slide to a new position in the presentation. Both indices are 0-based.',
+  parameters: {
+    type: 'object',
+    properties: {
+      fromIndex: { type: 'number', description: '0-based index of the slide to move.' },
+      toIndex: { type: 'number', description: '0-based destination index.' },
+    },
+    required: ['fromIndex', 'toIndex'],
+  },
+  handler: async (args: unknown): Promise<ToolResultObject | string> => {
+    const { fromIndex, toIndex } = (args ?? {}) as { fromIndex: number; toIndex: number };
+    try {
+      return await PowerPoint.run(async context => {
+        const slides = context.presentation.slides;
+        slides.load('items');
+        await context.sync();
+        const slideCount = slides.items.length;
+        if (fromIndex < 0 || fromIndex >= slideCount) {
+          return `Invalid fromIndex ${String(fromIndex)}. Must be 0-${String(slideCount - 1)}.`;
+        }
+        if (toIndex < 0 || toIndex >= slideCount) {
+          return `Invalid toIndex ${String(toIndex)}. Must be 0-${String(slideCount - 1)}.`;
+        }
+        slides.items[fromIndex].moveTo(toIndex);
+        await context.sync();
+        return `Moved slide from position ${String(fromIndex + 1)} to position ${String(toIndex + 1)}.`;
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { textResultForLlm: msg, resultType: 'failure', error: msg, toolTelemetry: {} };
+    }
+  },
+};
+
+const setSlideBackground: Tool = {
+  name: 'set_slide_background',
+  description: 'Set the background color of a slide. Use hex color values (e.g. "FFFFFF" for white, "1F4E79" for dark blue).',
+  parameters: {
+    type: 'object',
+    properties: {
+      slideIndex: { type: 'number', description: '0-based slide index.' },
+      color: { type: 'string', description: 'Background color as hex (e.g. "FFFFFF", "1F4E79").' },
+    },
+    required: ['slideIndex', 'color'],
+  },
+  handler: async (args: unknown): Promise<ToolResultObject | string> => {
+    const { slideIndex, color } = (args ?? {}) as { slideIndex: number; color: string };
+    try {
+      return await PowerPoint.run(async context => {
+        const slides = context.presentation.slides;
+        slides.load('items');
+        await context.sync();
+        const slideCount = slides.items.length;
+        if (slideIndex < 0 || slideIndex >= slideCount) {
+          return `Invalid slideIndex ${String(slideIndex)}. Must be 0-${String(slideCount - 1)}.`;
+        }
+        const slide = slides.items[slideIndex];
+        slide.background.fill.setSolidFill({ color });
+        await context.sync();
+        return `Set background of slide ${String(slideIndex + 1)} to #${color}.`;
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { textResultForLlm: msg, resultType: 'failure', error: msg, toolTelemetry: {} };
+    }
+  },
+};
+
+const addGeometricShape: Tool = {
+  name: 'add_geometric_shape',
+  description:
+    'Add a geometric shape (rectangle, ellipse, triangle, arrow, etc.) to a slide. Position and size are in points (1 inch = 72 points). Standard slide is 720×540 points.',
+  parameters: {
+    type: 'object',
+    properties: {
+      slideIndex: { type: 'number', description: '0-based slide index.' },
+      geometryType: {
+        type: 'string',
+        description:
+          'Shape type: rectangle, roundedRectangle, ellipse, triangle, rightTriangle, diamond, pentagon, hexagon, star4, star5, arrow, leftArrow, upArrow, downArrow, parallelogram, trapezoid, cloud, heart, plus, donut, noSmoking, blockArc, foldedCorner, smileyFace, and more.',
+      },
+      left: { type: 'number', description: 'Left position in points. Default: 100.' },
+      top: { type: 'number', description: 'Top position in points. Default: 100.' },
+      width: { type: 'number', description: 'Width in points. Default: 200.' },
+      height: { type: 'number', description: 'Height in points. Default: 150.' },
+      fillColor: { type: 'string', description: 'Fill color as hex (e.g. "4472C4").' },
+    },
+    required: ['slideIndex', 'geometryType'],
+  },
+  handler: async (args: unknown): Promise<ToolResultObject | string> => {
+    const a = (args ?? {}) as {
+      slideIndex: number;
+      geometryType: string;
+      left?: number;
+      top?: number;
+      width?: number;
+      height?: number;
+      fillColor?: string;
+    };
+    try {
+      return await PowerPoint.run(async context => {
+        const slides = context.presentation.slides;
+        slides.load('items');
+        await context.sync();
+        const slideCount = slides.items.length;
+        if (a.slideIndex < 0 || a.slideIndex >= slideCount) {
+          return `Invalid slideIndex ${String(a.slideIndex)}. Must be 0-${String(slideCount - 1)}.`;
+        }
+        const slide = slides.items[a.slideIndex];
+        const shape = slide.shapes.addGeometricShape(
+          a.geometryType as PowerPoint.GeometricShapeType,
+          {
+            left: a.left ?? 100,
+            top: a.top ?? 100,
+            width: a.width ?? 200,
+            height: a.height ?? 150,
+          }
+        );
+        if (a.fillColor) {
+          shape.fill.setSolidColor(a.fillColor);
+        }
+        await context.sync();
+        return `Added ${a.geometryType} shape to slide ${String(a.slideIndex + 1)}.`;
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { textResultForLlm: msg, resultType: 'failure', error: msg, toolTelemetry: {} };
+    }
+  },
+};
+
+const addLine: Tool = {
+  name: 'add_line',
+  description: 'Add a line or connector to a slide. Position and size are in points.',
+  parameters: {
+    type: 'object',
+    properties: {
+      slideIndex: { type: 'number', description: '0-based slide index.' },
+      connectorType: {
+        type: 'string',
+        description: 'Line type: straight, elbow, or curve. Default: straight.',
+      },
+      left: { type: 'number', description: 'Left (start X) in points. Default: 100.' },
+      top: { type: 'number', description: 'Top (start Y) in points. Default: 100.' },
+      width: { type: 'number', description: 'Horizontal length in points. Default: 200.' },
+      height: { type: 'number', description: 'Vertical length in points. Default: 0 (horizontal line).' },
+      lineColor: { type: 'string', description: 'Line color as hex.' },
+      lineWeight: { type: 'number', description: 'Line weight in points.' },
+    },
+    required: ['slideIndex'],
+  },
+  handler: async (args: unknown): Promise<ToolResultObject | string> => {
+    const a = (args ?? {}) as {
+      slideIndex: number;
+      connectorType?: string;
+      left?: number;
+      top?: number;
+      width?: number;
+      height?: number;
+      lineColor?: string;
+      lineWeight?: number;
+    };
+    try {
+      return await PowerPoint.run(async context => {
+        const slides = context.presentation.slides;
+        slides.load('items');
+        await context.sync();
+        const slideCount = slides.items.length;
+        if (a.slideIndex < 0 || a.slideIndex >= slideCount) {
+          return `Invalid slideIndex ${String(a.slideIndex)}. Must be 0-${String(slideCount - 1)}.`;
+        }
+        const slide = slides.items[a.slideIndex];
+        const connType = (a.connectorType ?? 'straight') as PowerPoint.ConnectorType;
+        const line = slide.shapes.addLine(connType, {
+          left: a.left ?? 100,
+          top: a.top ?? 100,
+          width: a.width ?? 200,
+          height: a.height ?? 0,
+        });
+        if (a.lineColor) {
+          line.lineFormat.color = a.lineColor;
+        }
+        if (a.lineWeight !== undefined) {
+          line.lineFormat.weight = a.lineWeight;
+        }
+        await context.sync();
+        return `Added ${connType} line to slide ${String(a.slideIndex + 1)}.`;
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { textResultForLlm: msg, resultType: 'failure', error: msg, toolTelemetry: {} };
+    }
+  },
+};
+
+const deleteShape: Tool = {
+  name: 'delete_shape',
+  description: 'Delete a specific shape from a slide by its 0-based index.',
+  parameters: {
+    type: 'object',
+    properties: {
+      slideIndex: { type: 'number', description: '0-based slide index.' },
+      shapeIndex: { type: 'number', description: '0-based shape index (use get_slide_shapes to find it).' },
+    },
+    required: ['slideIndex', 'shapeIndex'],
+  },
+  handler: async (args: unknown): Promise<ToolResultObject | string> => {
+    const { slideIndex, shapeIndex } = (args ?? {}) as { slideIndex: number; shapeIndex: number };
+    try {
+      return await PowerPoint.run(async context => {
+        const slides = context.presentation.slides;
+        slides.load('items');
+        await context.sync();
+        const slideCount = slides.items.length;
+        if (slideIndex < 0 || slideIndex >= slideCount) {
+          return `Invalid slideIndex ${String(slideIndex)}. Must be 0-${String(slideCount - 1)}.`;
+        }
+        const slide = slides.items[slideIndex];
+        slide.shapes.load('items');
+        await context.sync();
+        const shapeCount = slide.shapes.items.length;
+        if (shapeIndex < 0 || shapeIndex >= shapeCount) {
+          return `Invalid shapeIndex ${String(shapeIndex)}. Slide has ${String(shapeCount)} shapes.`;
+        }
+        slide.shapes.items[shapeIndex].delete();
+        await context.sync();
+        return `Deleted shape ${String(shapeIndex)} from slide ${String(slideIndex + 1)}.`;
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { textResultForLlm: msg, resultType: 'failure', error: msg, toolTelemetry: {} };
+    }
+  },
+};
+
+const getSlideLayouts: Tool = {
+  name: 'get_slide_layouts',
+  description: 'List all available slide layouts from the first slide master. Use with apply_slide_layout.',
+  parameters: { type: 'object', properties: {}, required: [] },
+  handler: async (): Promise<ToolResultObject | string> => {
+    try {
+      return await PowerPoint.run(async context => {
+        const masters = context.presentation.slideMasters;
+        masters.load('items');
+        await context.sync();
+        if (masters.items.length === 0) return 'No slide masters found.';
+
+        const master = masters.items[0];
+        master.layouts.load('items');
+        await context.sync();
+
+        const lines = [`Slide Layouts (${String(master.layouts.items.length)})`, '='.repeat(40)];
+        for (let i = 0; i < master.layouts.items.length; i++) {
+          const layout = master.layouts.items[i];
+          layout.load('name,id');
+          await context.sync();
+          lines.push(`${String(i)}. "${layout.name}" (id: ${layout.id})`);
+        }
+        return lines.join('\n');
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { textResultForLlm: msg, resultType: 'failure', error: msg, toolTelemetry: {} };
+    }
+  },
+};
+
+const applySlideLayout: Tool = {
+  name: 'apply_slide_layout',
+  description: 'Apply a layout from the first slide master to a slide. Use get_slide_layouts to see available layouts.',
+  parameters: {
+    type: 'object',
+    properties: {
+      slideIndex: { type: 'number', description: '0-based slide index.' },
+      layoutIndex: { type: 'number', description: '0-based layout index from get_slide_layouts.' },
+    },
+    required: ['slideIndex', 'layoutIndex'],
+  },
+  handler: async (args: unknown): Promise<ToolResultObject | string> => {
+    const { slideIndex, layoutIndex } = (args ?? {}) as { slideIndex: number; layoutIndex: number };
+    try {
+      return await PowerPoint.run(async context => {
+        const slides = context.presentation.slides;
+        slides.load('items');
+        await context.sync();
+        const slideCount = slides.items.length;
+        if (slideIndex < 0 || slideIndex >= slideCount) {
+          return `Invalid slideIndex ${String(slideIndex)}. Must be 0-${String(slideCount - 1)}.`;
+        }
+
+        const masters = context.presentation.slideMasters;
+        masters.load('items');
+        await context.sync();
+        if (masters.items.length === 0) return 'No slide masters found.';
+
+        const master = masters.items[0];
+        master.layouts.load('items');
+        await context.sync();
+        if (layoutIndex < 0 || layoutIndex >= master.layouts.items.length) {
+          return `Invalid layoutIndex ${String(layoutIndex)}. Must be 0-${String(master.layouts.items.length - 1)}.`;
+        }
+
+        const layout = master.layouts.items[layoutIndex];
+        layout.load('name');
+        await context.sync();
+
+        slides.items[slideIndex].applyLayout(layout);
+        await context.sync();
+        return `Applied layout "${layout.name}" to slide ${String(slideIndex + 1)}.`;
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { textResultForLlm: msg, resultType: 'failure', error: msg, toolTelemetry: {} };
+    }
+  },
+};
+
+const getSelectedSlides: Tool = {
+  name: 'get_selected_slides',
+  description: 'Get the currently selected slides in the presentation.',
+  parameters: { type: 'object', properties: {}, required: [] },
+  handler: async (): Promise<ToolResultObject | string> => {
+    try {
+      return await PowerPoint.run(async context => {
+        const selected = context.presentation.getSelectedSlides();
+        selected.load('items');
+        await context.sync();
+        if (selected.items.length === 0) return 'No slides selected.';
+        const indices: string[] = [];
+        for (const slide of selected.items) {
+          slide.load('index');
+          await context.sync();
+          indices.push(String(slide.index));
+        }
+        return `Selected slides: ${indices.map(i => `slide ${i}`).join(', ')}`;
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { textResultForLlm: msg, resultType: 'failure', error: msg, toolTelemetry: {} };
+    }
+  },
+};
+
+const getSelectedShapes: Tool = {
+  name: 'get_selected_shapes',
+  description: 'Get the currently selected shapes on the active slide.',
+  parameters: { type: 'object', properties: {}, required: [] },
+  handler: async (): Promise<ToolResultObject | string> => {
+    try {
+      return await PowerPoint.run(async context => {
+        const selected = context.presentation.getSelectedShapes();
+        selected.load('items');
+        await context.sync();
+        if (selected.items.length === 0) return 'No shapes selected.';
+        const lines = [`Selected shapes (${String(selected.items.length)}):`];
+        for (const shape of selected.items) {
+          shape.load('name,left,top,width,height');
+          await context.sync();
+          lines.push(`- "${shape.name}" at (${String(Math.round(shape.left))}, ${String(Math.round(shape.top))}) size ${String(Math.round(shape.width))}×${String(Math.round(shape.height))}`);
+        }
+        return lines.join('\n');
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { textResultForLlm: msg, resultType: 'failure', error: msg, toolTelemetry: {} };
+    }
+  },
+};
+
+const setShapeText: Tool = {
+  name: 'set_shape_text',
+  description: 'Set the text of an existing shape by index, preserving the shape itself. Unlike update_slide_shape, this tool also supports adding text to shapes that currently have no text.',
+  parameters: {
+    type: 'object',
+    properties: {
+      slideIndex: { type: 'number', description: '0-based slide index.' },
+      shapeIndex: { type: 'number', description: '0-based shape index.' },
+      text: { type: 'string', description: 'The text to set.' },
+    },
+    required: ['slideIndex', 'shapeIndex', 'text'],
+  },
+  handler: async (args: unknown): Promise<ToolResultObject | string> => {
+    const { slideIndex, shapeIndex, text } = (args ?? {}) as {
+      slideIndex: number;
+      shapeIndex: number;
+      text: string;
+    };
+    try {
+      return await PowerPoint.run(async context => {
+        const slides = context.presentation.slides;
+        slides.load('items');
+        await context.sync();
+        const slideCount = slides.items.length;
+        if (slideIndex < 0 || slideIndex >= slideCount) {
+          return `Invalid slideIndex ${String(slideIndex)}. Must be 0-${String(slideCount - 1)}.`;
+        }
+        const slide = slides.items[slideIndex];
+        slide.shapes.load('items');
+        await context.sync();
+        const shapeCount = slide.shapes.items.length;
+        if (shapeIndex < 0 || shapeIndex >= shapeCount) {
+          return `Invalid shapeIndex ${String(shapeIndex)}. Slide has ${String(shapeCount)} shapes.`;
+        }
+        const shape = slide.shapes.items[shapeIndex];
+        shape.textFrame.textRange.text = text;
+        await context.sync();
+        return `Set text of shape ${String(shapeIndex)} on slide ${String(slideIndex + 1)}.`;
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { textResultForLlm: msg, resultType: 'failure', error: msg, toolTelemetry: {} };
+    }
+  },
+};
+
 export const powerPointTools: Tool[] = [
   getPresentationOverview,
   getPresentationContent,
   getSlideImage,
   getSlideNotes,
+  getSlideShapes,
+  getSlideLayouts,
+  getSelectedSlides,
+  getSelectedShapes,
   setPresentationContent,
   addSlideFromCode,
+  addGeometricShape,
+  addLine,
   clearSlide,
+  deleteSlide,
+  moveSlide,
+  setSlideBackground,
+  applySlideLayout,
   updateSlideShape,
+  setShapeText,
+  updateShapeStyle,
+  moveResizeShape,
+  deleteShape,
   setSlideNotes,
   duplicateSlide,
 ];

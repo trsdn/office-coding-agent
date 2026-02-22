@@ -25,12 +25,25 @@ Use this as the default orchestration skill for PowerPoint tasks.
 | Read slide text               | `get_presentation_content` |
 | See slide visually            | `get_slide_image`          |
 | Read speaker notes            | `get_slide_notes`          |
+| List shapes with details      | `get_slide_shapes`         |
+| List available layouts        | `get_slide_layouts`        |
+| Get selected slides           | `get_selected_slides`      |
+| Get selected shapes           | `get_selected_shapes`      |
 | Add a text box                | `set_presentation_content` |
 | Create a rich formatted slide | `add_slide_from_code`      |
 | Replace an existing slide     | `add_slide_from_code` with `replaceSlideIndex` |
-| Edit text in a shape          | `update_slide_shape`       |
+| Add geometric shape           | `add_geometric_shape`      |
+| Add a line/connector          | `add_line`                 |
+| Edit text in a shape          | `update_slide_shape` or `set_shape_text` |
+| Change shape colors/style     | `update_shape_style`       |
+| Move or resize a shape        | `move_resize_shape`        |
+| Delete a specific shape       | `delete_shape`             |
 | Clear all shapes from slide   | `clear_slide`              |
-| Copy a slide                  | `duplicate_slide`          |
+| Delete a slide                | `delete_slide`             |
+| Reorder slides                | `move_slide`               |
+| Set slide background color    | `set_slide_background`     |
+| Apply a layout to a slide     | `apply_slide_layout`       |
+| Copy a slide (text only)      | `duplicate_slide`          |
 | Set speaker notes             | `set_slide_notes`          |
 
 ## Common Workflows
