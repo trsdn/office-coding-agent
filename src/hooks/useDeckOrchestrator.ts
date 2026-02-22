@@ -79,9 +79,10 @@ export async function orchestrateDeck(
   signal?: AbortSignal,
   mode: DeckMode = 'fast',
 ): Promise<void> {
-  const BATCH_SIZE = mode === 'deep' ? 1 : 3;
+  // fast = all slides in one session, deep = 1 slide per session
+  const BATCH_SIZE = mode === 'deep' ? 1 : Infinity;
   // --- Phase 1: Planner ---
-  callbacks.onText(`📋 Erstelle Plan… (${mode === 'deep' ? 'Deep — 1 Slide/Worker' : 'Fast — 3 Slides/Worker'})\n`);
+  callbacks.onText(`📋 Erstelle Plan… (${mode === 'deep' ? 'Deep — 1 Slide/Worker' : 'Fast — alle Slides in 1 Session'})\n`);
 
   const plannerResult = await runSubSession(
     client,
