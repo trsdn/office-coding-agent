@@ -29,32 +29,24 @@ async function getSlideTextContent(startIdx: number, endIdx: number): Promise<st
     for (let i = 0; i < slideRefs.length; i++) {
       const slide = slideRefs[i];
       const texts: string[] = [];
+      let shapeCount = 0;
 
-      try {
-        for (const shape of slide.shapes.items) {
-          try {
-            shape.textFrame.textRange.load('text');
-          } catch {
-            // shape proxy doesn't support textFrame
-          }
+      // Process each shape individually — batch sync fails when ANY shape lacks a textFrame
+      for (const shape of slide.shapes.items) {
+        shapeCount++;
+        try {
+          shape.textFrame.textRange.load('text');
+          await context.sync();
+          const text = shape.textFrame.textRange.text?.trim() ?? '';
+          if (text.length > 0) texts.push(text);
+        } catch {
+          // shape doesn't support textFrame (SmartArt, chart, image, etc.)
         }
-        await context.sync();
-
-        for (const shape of slide.shapes.items) {
-          try {
-            const text = shape.textFrame.textRange.text?.trim() ?? '';
-            if (text.length > 0) texts.push(text);
-          } catch {
-            // skip
-          }
-        }
-      } catch {
-        // context.sync() failed — slide has shapes with unsupported textFrame loads
       }
 
       if (texts.length > 0) {
         results.push(`Slide ${startIdx + i + 1}: ${texts.join(' | ')}`);
-      } else if (slide.shapes.items.length > 0) {
+      } else if (shapeCount > 0) {
         results.push(
           `Slide ${startIdx + i + 1}: (contains graphics/SmartArt — use get_slide_image to see visual content)`
         );
@@ -198,11 +190,7 @@ const getSlideImage: Tool = {
         }
 
         const slide = slides.items[slideIndex];
-        // getImageAsBase64 is available in PowerPoint requirement set 1.5+
-        interface SlideWithImage {
-          getImageAsBase64(width: number): { value: string };
-        }
-        const imageResult = (slide as unknown as SlideWithImage).getImageAsBase64(width);
+        const imageResult = slide.getImageAsBase64({ width });
         await context.sync();
 
         return {
