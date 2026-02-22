@@ -51,7 +51,7 @@ describe('parseMcpJsonFile', () => {
     expect(result[0].description).toBe('My server');
   });
 
-  it('skips entries without a url (stdio entries)', async () => {
+  it('parses both stdio and http entries', async () => {
     const file = makeFile({
       mcpServers: {
         stdio: { command: 'node', args: ['server.js'] },
@@ -59,8 +59,9 @@ describe('parseMcpJsonFile', () => {
       },
     });
     const result = await parseMcpJsonFile(file);
-    expect(result).toHaveLength(1);
-    expect(result[0].name).toBe('web');
+    expect(result).toHaveLength(2);
+    expect(result[0]).toMatchObject({ name: 'stdio', transport: 'stdio', command: 'node' });
+    expect(result[1]).toMatchObject({ name: 'web', transport: 'http' });
   });
 
   it('skips unknown transport types', async () => {
@@ -85,13 +86,15 @@ describe('parseMcpJsonFile', () => {
     await expect(parseMcpJsonFile(file)).rejects.toThrow();
   });
 
-  it('throws when all entries are skipped (no valid HTTP/SSE servers)', async () => {
+  it('parses stdio-only configs successfully', async () => {
     const file = makeFile({
       mcpServers: {
         stdio: { command: 'node' },
       },
     });
-    await expect(parseMcpJsonFile(file)).rejects.toThrow('No valid HTTP/SSE');
+    const result = await parseMcpJsonFile(file);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ name: 'stdio', transport: 'stdio', command: 'node', args: [] });
   });
 
   it('throws on non-.json file extension', async () => {

@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "workiq": {
+      "command": "npx",
+      "args": ["-y", "@microsoft/workiq", "mcp"]
+    },
+    "microsoft-events": {
+      "command": "python",
+      "args": ["C:\\Users\\urstojki\\msevent-mcp\\mcp_server.py"]
+    }
+  }
+}

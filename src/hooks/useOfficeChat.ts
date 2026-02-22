@@ -6,9 +6,10 @@ import { createWebSocketClient } from '@/lib/websocket-client';
 import { getToolsForHost } from '@/tools';
 import { buildSkillContext } from '@/services/skills';
 import { resolveActiveAgent } from '@/services/agents';
+import { resolveActiveMcpServers } from '@/services/mcp/mcpService';
 import { useSettingsStore } from '@/stores';
 import { buildSystemPrompt } from '@/services/ai/systemPrompt';
-import { inferProvider } from '@/types';
+import { inferProvider, WORKIQ_MCP_SERVER } from '@/types';
 import type { OfficeHostApp } from '@/services/office/host';
 import { generateId } from '@/utils/id';
 
@@ -65,6 +66,9 @@ export function useOfficeChat(host: OfficeHostApp) {
   const activeModel = useSettingsStore(s => s.activeModel);
   const activeSkillNames = useSettingsStore(s => s.activeSkillNames);
   const activeAgentId = useSettingsStore(s => s.activeAgentId);
+  const importedMcpServers = useSettingsStore(s => s.importedMcpServers);
+  const activeMcpServerNames = useSettingsStore(s => s.activeMcpServerNames);
+  const workiqEnabled = useSettingsStore(s => s.workiqEnabled);
 
   const clientRef = useRef<WebSocketCopilotClient | null>(null);
   const sessionRef = useRef<BrowserCopilotSession | null>(null);
@@ -101,12 +105,18 @@ export function useOfficeChat(host: OfficeHostApp) {
       const skillContext = buildSkillContext(activeSkillNames ?? undefined, host);
       const systemContent = `${buildSystemPrompt(host)}\n\n${agentInstructions}${skillContext}`;
 
+      const activeMcp = resolveActiveMcpServers(importedMcpServers, activeMcpServerNames);
+      if (workiqEnabled) activeMcp.push(WORKIQ_MCP_SERVER);
+
       const session = await withTimeout(
-        client.createSession({
-          model: activeModel,
-          systemMessage: { mode: 'replace', content: systemContent },
-          tools: getToolsForHost(host),
-        }),
+        client.createSession(
+          {
+            model: activeModel,
+            systemMessage: { mode: 'replace', content: systemContent },
+            tools: getToolsForHost(host),
+          },
+          activeMcp
+        ),
         60_000,
         'session.create'
       );
@@ -122,7 +132,15 @@ export function useOfficeChat(host: OfficeHostApp) {
     } finally {
       setIsConnecting(false);
     }
-  }, [activeModel, host, activeSkillNames, activeAgentId]);
+  }, [
+    activeModel,
+    host,
+    activeSkillNames,
+    activeAgentId,
+    importedMcpServers,
+    activeMcpServerNames,
+    workiqEnabled,
+  ]);
 
   useEffect(() => {
     void initSession();

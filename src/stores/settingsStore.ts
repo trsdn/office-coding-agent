@@ -47,6 +47,9 @@ interface SettingsState extends UserSettings {
   removeMcpServer: (serverName: string) => void;
   toggleMcpServer: (serverName: string) => void;
 
+  // ─── WorkIQ ───
+  toggleWorkiq: () => void;
+
   // ─── Reset ───
   reset: () => void;
 }
@@ -228,6 +231,11 @@ export const useSettingsStore = create<SettingsState>()(
         });
       },
 
+      // ─── WorkIQ ───
+      toggleWorkiq: () => {
+        set(state => ({ workiqEnabled: !state.workiqEnabled }));
+      },
+
       // ─── Reset ───
       reset: () => {
         setImportedSkills([]);
@@ -246,6 +254,7 @@ export const useSettingsStore = create<SettingsState>()(
         importedAgents: state.importedAgents,
         importedMcpServers: state.importedMcpServers,
         activeMcpServerNames: state.activeMcpServerNames,
+        workiqEnabled: state.workiqEnabled,
         // availableModels is NOT persisted — it's always fetched fresh from the
         // Copilot CLI on connect, so a stale cached list never survives restarts.
       }),

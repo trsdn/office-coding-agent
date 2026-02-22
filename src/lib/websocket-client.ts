@@ -163,7 +163,17 @@ export class WebSocketCopilotClient {
     });
   }
 
-  async createSession(config: SessionConfig = {}): Promise<BrowserCopilotSession> {
+  async createSession(
+    config: SessionConfig = {},
+    mcpServers?: {
+      name: string;
+      url?: string;
+      transport: string;
+      headers?: Record<string, string>;
+      command?: string;
+      args?: string[];
+    }[]
+  ): Promise<BrowserCopilotSession> {
     if (!this.connection) {
       throw new Error('Client not connected. Call start() first.');
     }
@@ -177,6 +187,7 @@ export class WebSocketCopilotClient {
         description: tool.description,
         parameters: tool.parameters,
       })),
+      mcpServers: mcpServers ?? [],
     });
 
     const sessionId = response.sessionId;
