@@ -14,9 +14,11 @@ Use this as the default orchestration skill for PowerPoint tasks.
 1. **Locate** — Call `get_selected_slides` to know which slide the user is on right now.
 2. **Discover** — Call `get_presentation_overview` to understand slide count and text content.
 3. **Read** — Use `get_presentation_content`, `get_slide_shapes`, or `get_slide_image` to inspect the current slide.
-4. **Execute** — Create, modify, or reorganize slides using the appropriate tool.
-5. **Verify** — Confirm what changed (re-read modified slides if needed).
-6. **Summarize** — Finish with a concise plain-language summary of what was done.
+4. **Plan** — Before creating or modifying, choose the right layout approach (see Layout Variety below).
+5. **Execute** — Create, modify, or reorganize slides using the appropriate tool.
+6. **Verify** — Use `get_slide_image` to visually inspect the result. Assume there are issues — find them.
+7. **Refine** — Fix issues found, then re-verify. Repeat until a full pass reveals no new issues.
+8. **Summarize** — Finish with a concise plain-language summary of what was done.
 
 ## High-Level Tool Guidance
 
@@ -47,6 +49,38 @@ Use this as the default orchestration skill for PowerPoint tasks.
 | Copy a slide (text only)      | `duplicate_slide`          |
 | Set speaker notes             | `set_slide_notes`          |
 
+## Layout Variety — CRITICAL
+
+⚠️ **Monotonous presentations are the #1 failure mode.** Do NOT default to title + bullet slides for everything.
+
+When building a deck, actively vary layouts across slides:
+
+- **Title slides** — large title, optional subtitle, minimal elements
+- **Bullet lists** — for key points, but keep bullets short (≤8 words per line)
+- **Two-column layouts** — comparison, pros/cons, before/after
+- **Three-column layouts** — team members, feature cards, process steps
+- **Image + text** — hero image on one side, text on the other
+- **Full-bleed color** — solid background with centered text for section dividers
+- **Stat/number callout** — large number with label for KPIs, metrics, highlights
+- **Quote slides** — large quote text with attribution
+- **Icon + text rows** — icons with labels for feature overviews
+- **Table slides** — structured data in clean tables
+
+**Match content type to layout style:**
+- Key points → bullet slide
+- Team info → multi-column cards
+- Testimonials → quote slide
+- Metrics → stat callout
+- Process → numbered steps or icon row
+- Comparison → two-column side-by-side
+
+**Rule:** In any deck of 5+ slides, never use the same layout pattern for more than 2 consecutive slides.
+
+## Choosing Between `set_presentation_content` and `add_slide_from_code`
+
+- **`set_presentation_content`**: Quick text box addition. No formatting control. Good for simple annotations.
+- **`add_slide_from_code`**: Full PptxGenJS power — text with fonts/colors/sizes, bullet lists, tables, shapes, images. Use this for any slide that needs to look professional.
+
 ## Common Workflows
 
 ### Summarize a presentation
@@ -55,41 +89,106 @@ Use this as the default orchestration skill for PowerPoint tasks.
 
 ### Create a new slide deck
 1. `get_presentation_overview` → understand current state
-2. `add_slide_from_code` → create each slide with PptxGenJS (title, bullets, tables, images)
-3. Confirm total slides created
+2. Plan slide mapping: decide layout type for each slide (vary layouts!)
+3. `add_slide_from_code` → create each slide with PptxGenJS
+4. `get_slide_image` on each slide → verify visual quality
+5. Fix issues, re-verify until clean
+6. Confirm total slides created
 
 ### Redesign a slide
-1. `get_slide_image` → see current visual design
-2. `get_presentation_content` → read the text content
-3. `add_slide_from_code` with `replaceSlideIndex` → replace with improved design
+1. `get_selected_slides` → which slide
+2. `get_slide_image` → see current visual design
+3. `get_presentation_content` → read the text content
+4. `get_slide_shapes` → understand shape layout and positions
+5. `add_slide_from_code` with `replaceSlideIndex` → first draft
+6. `get_slide_image` → inspect result (assume issues exist — find them)
+7. Refine and re-verify until polished
 
 ### Add content to existing slide
 1. `get_presentation_content` → read current text
-2. `update_slide_shape` → modify existing shape text, OR
-3. `set_presentation_content` → add a new text box
+2. `get_slide_shapes` → understand existing shape layout
+3. `update_slide_shape` or `set_shape_text` → modify existing text, OR
+4. `set_presentation_content` → add a new text box
+5. Verify with `get_slide_image`
 
-## Choosing Between `set_presentation_content` and `add_slide_from_code`
+### Modify existing presentation (template adaptation)
+1. `get_presentation_overview` → full structure
+2. `get_slide_image` on each relevant slide → visual analysis
+3. `get_slide_layouts` → available layouts in this deck
+4. Plan which slides to keep, modify, delete, or add
+5. Make structural changes first (delete/add/reorder slides)
+6. Then edit content on each slide
+7. Verify each modified slide with `get_slide_image`
 
-- **`set_presentation_content`**: Quick text box addition. No formatting control. Good for simple annotations.
-- **`add_slide_from_code`**: Full PptxGenJS power — text with fonts/colors/sizes, bullet lists, tables, shapes, images. Use this for any slide that needs to look professional.
+## Iterative Verification Loop — CRITICAL
 
-## Iterative Refinement Workflow
+**Do not declare success until you've completed at least one fix-and-verify cycle.**
 
-Never treat a slide as done after a single pass. Always:
+1. Create/modify slides
+2. `get_slide_image` → visually inspect the result
+3. **List issues found** (if none found, look again more critically)
+4. Fix issues
+5. **Re-verify affected slides** — one fix often creates another problem
+6. Repeat until a full pass reveals no new issues
 
-1. Create/modify the slide
-2. Verify with `get_slide_image` or `get_presentation_content`
-3. Evaluate: layout, readability, completeness, consistency
-4. Refine with `add_slide_from_code` + `replaceSlideIndex` if needed
-5. Repeat until polished
+### What to look for during verification:
+- **Overlapping elements** — text through shapes, stacked elements
+- **Text overflow** — content cut off at edges or box boundaries
+- **Cramped layout** — elements too close together (need breathing room)
+- **Uneven spacing** — large empty area in one place, cramped in another
+- **Insufficient margins** — content too close to slide edges
+- **Poor contrast** — light text on light background, or dark on dark
+- **Font size issues** — text too small to read in presentation mode (min 16pt for body)
+- **Inconsistent styling** — different fonts, colors, or sizes across similar elements
+- **Missing content** — did you include everything the user asked for?
+- **Leftover placeholder content** — template text that wasn't replaced
 
-### Redesign a slide (iterative)
-1. `get_slide_image` → see current design
-2. `get_presentation_content` → read text
-3. `add_slide_from_code` with `replaceSlideIndex` → first draft
-4. `get_slide_image` → check result
-5. `add_slide_from_code` with `replaceSlideIndex` → refine layout/spacing/colors
-6. `get_slide_image` → confirm final result
+## Template Adaptation Pitfalls
+
+When adapting existing slides or creating from templates:
+
+### Content count mismatch
+When source content has fewer items than the template expects:
+- **Remove excess elements entirely** — don't just clear text from shapes
+- Use `delete_shape` to remove unneeded shapes
+- Use `get_slide_shapes` to identify what to remove
+- Verify visually that layout still works after removal
+
+When source content has more items than space allows:
+- Split across multiple slides rather than cramming
+- Consider truncating or summarizing to fit
+
+### Text length mismatch
+- **Shorter replacements**: Usually safe
+- **Longer replacements**: May overflow text boxes or wrap unexpectedly
+- Always verify with `get_slide_image` after text changes
+- Adjust font size or box dimensions with `move_resize_shape` if needed
+
+## Formatting Rules
+
+### PptxGenJS best practices (for `add_slide_from_code`)
+
+- **Bold all headings and inline labels**: Use `bold: true` for slide titles, section headers, and labels like "Status:", "Note:"
+- **Consistent bullet style**: Use `{ bullet: true }` or `{ bullet: { type: "number" } }` — don't use unicode bullets (•, ‣, etc.)
+- **Multi-item content**: Create separate array items for each bullet/paragraph — never concatenate into one string
+
+**❌ WRONG** — all items in one text element:
+```js
+slide.addText("Step 1: Do the first thing. Step 2: Do the second thing.", { x: 0.5, y: 2, w: 9, h: 4, fontSize: 18 });
+```
+
+**✅ CORRECT** — separate elements with structure:
+```js
+slide.addText([
+  { text: "Step 1: Do the first thing", options: { bullet: true, fontSize: 18 } },
+  { text: "Step 2: Do the second thing", options: { bullet: true, fontSize: 18 } },
+], { x: 0.5, y: 2, w: 9, h: 4 });
+```
+
+- **Color values**: Use 6-digit hex without # prefix: `"4472C4"` not `"#4472C4"`
+- **Positioning**: All x, y, w, h values are in inches. Standard slide is 10" × 7.5"
+- **Safe margins**: Keep content within 0.5" from slide edges (x ≥ 0.5, y ≥ 0.5, x+w ≤ 9.5, y+h ≤ 7.0)
+- **Minimum font sizes**: Title ≥ 28pt, subtitle ≥ 20pt, body ≥ 16pt, captions ≥ 12pt
 
 ## Always-On Defaults
 
@@ -97,9 +196,10 @@ Never treat a slide as done after a single pass. Always:
 - Always discover the presentation structure before any modification.
 - Prefer `add_slide_from_code` over `set_presentation_content` for user-facing content.
 - Use 0-based slide indices consistently.
-- Always verify changes with `get_slide_image` after mutations.
+- **Always verify changes with `get_slide_image` after mutations.**
+- Vary layouts when creating multi-slide decks.
 - Always finish with a clear summary of actions taken.
 
 ## Multi-Step Requests
 
-Execute all requested steps in sequence where possible. If one step fails, report the failure clearly and continue independent remaining steps.
+Execute all requested steps in sequence where possible. If one step fails, report the failure clearly and continue with independent remaining steps.

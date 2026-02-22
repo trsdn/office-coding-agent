@@ -43,4 +43,5 @@ Thumbs.db
 .vscode/settings.json
 *.js.map
 __pycache__/
-aitest-reports/
+aitest-reports/tests-pptx/test.pptx
+tests-pptx/~$*
