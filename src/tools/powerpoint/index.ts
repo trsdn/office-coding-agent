@@ -24,65 +24,43 @@ async function getSlideTextContent(startIdx: number, endIdx: number): Promise<st
     }
     await context.sync();
 
-    // First pass: try loading textFrame for each shape (will silently fail for non-text shapes)
-    for (const slide of slideRefs) {
-      for (const shape of slide.shapes.items) {
-        try {
-          shape.textFrame.textRange.load('text');
-        } catch {
-          // shape may not have a textFrame (SmartArt, charts, etc.)
-        }
-      }
-    }
-    await context.sync();
-
     const results: string[] = [];
+    // Process each slide individually so one bad shape doesn't break everything
     for (let i = 0; i < slideRefs.length; i++) {
       const slide = slideRefs[i];
       const texts: string[] = [];
-      let hasNonTextShapes = false;
 
-      for (const shape of slide.shapes.items) {
-        try {
-          const text = shape.textFrame.textRange.text?.trim() ?? '';
-          if (text.length > 0) texts.push(text);
-        } catch {
-          hasNonTextShapes = true;
-        }
-      }
-
-      // Try to extract text from grouped shapes (SmartArt, etc.)
-      for (const shape of slide.shapes.items) {
-        try {
-          const groupShapes = shape.group.shapes;
-          groupShapes.load('items');
-          await context.sync();
-          for (const gs of groupShapes.items) {
-            try {
-              gs.textFrame.textRange.load('text');
-            } catch {
-              // skip
-            }
+      try {
+        for (const shape of slide.shapes.items) {
+          try {
+            shape.textFrame.textRange.load('text');
+          } catch {
+            // shape proxy doesn't support textFrame
           }
-          await context.sync();
-          for (const gs of groupShapes.items) {
-            try {
-              const text = gs.textFrame.textRange.text?.trim() ?? '';
-              if (text.length > 0) texts.push(text);
-            } catch {
-              // skip
-            }
-          }
-        } catch {
-          // not a group shape or group access not supported
         }
+        await context.sync();
+
+        for (const shape of slide.shapes.items) {
+          try {
+            const text = shape.textFrame.textRange.text?.trim() ?? '';
+            if (text.length > 0) texts.push(text);
+          } catch {
+            // skip
+          }
+        }
+      } catch {
+        // context.sync() failed — slide has shapes with unsupported textFrame loads
       }
 
-      let label = texts.length > 0 ? texts.join(' | ') : '(no text)';
-      if (texts.length === 0 && hasNonTextShapes) {
-        label = '(contains graphics/SmartArt — use get_slide_image to see visual content)';
+      if (texts.length > 0) {
+        results.push(`Slide ${startIdx + i + 1}: ${texts.join(' | ')}`);
+      } else if (slide.shapes.items.length > 0) {
+        results.push(
+          `Slide ${startIdx + i + 1}: (contains graphics/SmartArt — use get_slide_image to see visual content)`
+        );
+      } else {
+        results.push(`Slide ${startIdx + i + 1}: (empty slide)`);
       }
-      results.push(`Slide ${startIdx + i + 1}: ${label}`);
     }
     return results;
   });
