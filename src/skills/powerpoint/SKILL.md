@@ -11,11 +11,12 @@ Use this as the default orchestration skill for PowerPoint tasks.
 
 ## Operating Loop
 
-1. **Discover** — Call `get_presentation_overview` to understand slide count and text content.
-2. **Read** — Use `get_presentation_content` or `get_slide_image` to inspect specific slides.
-3. **Execute** — Create, modify, or reorganize slides using the appropriate tool.
-4. **Verify** — Confirm what changed (re-read modified slides if needed).
-5. **Summarize** — Finish with a concise plain-language summary of what was done.
+1. **Locate** — Call `get_selected_slides` to know which slide the user is on right now.
+2. **Discover** — Call `get_presentation_overview` to understand slide count and text content.
+3. **Read** — Use `get_presentation_content`, `get_slide_shapes`, or `get_slide_image` to inspect the current slide.
+4. **Execute** — Create, modify, or reorganize slides using the appropriate tool.
+5. **Verify** — Confirm what changed (re-read modified slides if needed).
+6. **Summarize** — Finish with a concise plain-language summary of what was done.
 
 ## High-Level Tool Guidance
 
@@ -92,6 +93,7 @@ Never treat a slide as done after a single pass. Always:
 
 ## Always-On Defaults
 
+- **Always call `get_selected_slides` first** to know the user's current slide.
 - Always discover the presentation structure before any modification.
 - Prefer `add_slide_from_code` over `set_presentation_content` for user-facing content.
 - Use 0-based slide indices consistently.
