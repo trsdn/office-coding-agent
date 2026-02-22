@@ -4,6 +4,8 @@ export interface SkillMetadata {
   description: string;
   version: string;
   tags: string[];
+  /** Office hosts where this skill is relevant. If empty/omitted, shown for all hosts. */
+  hosts?: string[];
   license?: string;
   repository?: string;
   documentation?: string;

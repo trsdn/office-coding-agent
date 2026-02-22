@@ -108,6 +108,14 @@ function setMetadataField(metadata: SkillMetadata, key: string, value: string): 
     case 'documentation':
       metadata.documentation = value;
       break;
+    case 'hosts':
+      metadata.hosts = value
+        .replace(/^\[/, '')
+        .replace(/\]$/, '')
+        .split(',')
+        .map(h => h.trim())
+        .filter(Boolean);
+      break;
   }
 }
 
@@ -138,10 +146,15 @@ export function setImportedSkills(skills: AgentSkill[]): void {
 }
 
 /**
- * Get all loaded agent skills.
+ * Get all loaded agent skills, optionally filtered by host.
+ * Skills with no `hosts` field are shown for all hosts.
  */
-export function getSkills(): AgentSkill[] {
-  return [...bundledSkills, ...importedSkills];
+export function getSkills(host?: string): AgentSkill[] {
+  const all = [...bundledSkills, ...importedSkills];
+  if (!host) return all;
+  return all.filter(
+    s => !s.metadata.hosts || s.metadata.hosts.length === 0 || s.metadata.hosts.includes(host)
+  );
 }
 
 /**
@@ -155,10 +168,11 @@ export function getSkill(name: string): AgentSkill | undefined {
  * Build the combined skill context string for injection into the system prompt.
  * @param activeNames — if provided, only include skills whose names are in this list.
  *                       If omitted or empty, all bundled skills are included.
+ * @param host — if provided, only include skills that match this host.
  * Returns an empty string if no skills match.
  */
-export function buildSkillContext(activeNames?: string[]): string {
-  let skills = getSkills();
+export function buildSkillContext(activeNames?: string[], host?: string): string {
+  let skills = getSkills(host);
 
   // Filter to active names if provided (empty array = none active)
   if (activeNames !== undefined) {

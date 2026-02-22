@@ -98,7 +98,7 @@ export function useOfficeChat(host: OfficeHostApp) {
 
       const resolvedAgent = resolveActiveAgent(activeAgentId, host);
       const agentInstructions = resolvedAgent?.instructions ?? '';
-      const skillContext = buildSkillContext(activeSkillNames ?? undefined);
+      const skillContext = buildSkillContext(activeSkillNames ?? undefined, host);
       const systemContent = `${buildSystemPrompt(host)}\n\n${agentInstructions}${skillContext}`;
 
       const session = await withTimeout(
