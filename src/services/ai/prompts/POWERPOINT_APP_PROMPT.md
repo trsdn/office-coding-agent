@@ -87,11 +87,16 @@ Text overflow (content cut off at box edges) is the #1 visual defect. Follow the
 - **Content zone**: y = 1.5–1.8" to y+h ≤ 7.0" (remaining ~5.2" of vertical space)
 - **Multi-column**: With N columns, each column width ≈ (9.0 - gaps) / N. Use 0.3" gaps between columns.
 
-### Content Limits Per Slide
-- **Bullet slides**: Maximum 5–6 bullets. Each bullet ≤ 10 words. If more content, split across slides.
-- **Column/card layouts**: Maximum 4 columns. With 4 columns, keep text to 3–4 bullets per column at 11–12pt.
-- **Two-column comparison**: Maximum 4 items per column at 13–14pt.
+### Content Limits Per Slide — MANDATORY
+⚠️ **These are hard limits. Exceeding them WILL cause text overflow.**
+
+- **Bullet slides**: Maximum 5 bullets at 14–16pt. Each bullet must be ≤ 8 words. No exceptions.
+- **"Label: Description" bullets**: The description part must be ≤ 6 words. Example: `"Machine Learning: Systems that improve from experience"` (6 words after colon). If a description needs more words, shorten it.
+- **Definition + bullets combo**: Maximum 2-line definition paragraph + 4 bullets. Use 14pt max.
+- **Column/card layouts**: Maximum 4 columns. With 4 columns, keep text to 2–3 bullets per column at 11–12pt.
+- **Two-column comparison**: Maximum 4 items per column at 13–14pt. Each item ≤ 8 words.
 - **Quote slides**: Maximum 3 lines of quote text.
+- **General rule**: If content won't fit, SHORTEN THE TEXT — don't shrink the font below minimums.
 
 ### Preventing Overflow
 1. **Calculate before coding**: Count your content items and estimate total height BEFORE writing PptxGenJS code.
