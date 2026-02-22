@@ -37,15 +37,12 @@ Activate this skill when creating new presentations or adding multiple slides.
 For each slide {
   1. Create with add_slide_from_code
   2. Call get_slide_image — look at the result
-  3. Ask yourself: does anything look wrong?
-     - Text cut off?
-     - Words breaking mid-word?
-     - Elements overlapping?
-     - Too cramped or too empty?
-  4. If YES → fix it (shorten text, reduce columns, adjust layout)
-     → call get_slide_image again
-     → repeat until it looks good
-  5. Move to next slide
+  3. CHECK THE BOTTOM EDGE FIRST:
+     Is any text cut off at the bottom of any text box, card, or column?
+     This is the #1 defect. Even one missing line = must fix.
+  4. Then check: words breaking? Overlapping? Cramped? Empty space?
+  5. If ANY issue → fix it → call get_slide_image again → repeat
+  6. Move to next slide only when it looks right
 }
 ```
 
