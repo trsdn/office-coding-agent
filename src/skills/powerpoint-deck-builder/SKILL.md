@@ -36,11 +36,11 @@ Activate this skill when creating new presentations or adding multiple slides.
 ```
 For each slide {
   1. Create with add_slide_from_code
-  2. Call get_slide_image(region: "full") — overview check
-  3. Call get_slide_image(region: "bottom") — zoomed bottom half
-     This catches text overflow that's invisible in the full view!
-  4. If ANY issue → fix it → verify again (both full + bottom)
-  5. Move to next slide only when it looks right
+  2. Call get_slide_image(region: "detailed")
+     → Returns 1 overview + 4 zoomed quadrants in one call
+  3. Inspect ALL 5 images: text cut off? Words breaking? Overlap? Empty space?
+  4. If ANY issue → fix it → get_slide_image(region: "detailed") again
+  5. Move to next slide only when all quadrants look right
 }
 ```
 

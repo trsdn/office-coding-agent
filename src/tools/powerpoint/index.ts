@@ -172,11 +172,10 @@ const getPresentationContent: Tool = {
   },
 };
 
-// Crop a base64 PNG to a region using OffscreenCanvas (available in modern browsers)
-function cropImage(
-  base64: string,
-  region: 'full' | 'top' | 'bottom' | 'left' | 'right',
-): Promise<string> {
+// Crop a base64 PNG to a region using Canvas
+type Region = 'full' | 'top' | 'bottom' | 'left' | 'right' | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+
+function cropImage(base64: string, region: Region): Promise<string> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
@@ -201,6 +200,26 @@ function cropImage(
           sx = Math.round(w * 0.5);
           sw = w - sx;
           break;
+        case 'top-left':
+          sw = Math.round(w * 0.5);
+          sh = Math.round(h * 0.5);
+          break;
+        case 'top-right':
+          sx = Math.round(w * 0.5);
+          sw = w - sx;
+          sh = Math.round(h * 0.5);
+          break;
+        case 'bottom-left':
+          sw = Math.round(w * 0.5);
+          sy = Math.round(h * 0.5);
+          sh = h - sy;
+          break;
+        case 'bottom-right':
+          sx = Math.round(w * 0.5);
+          sw = w - sx;
+          sy = Math.round(h * 0.5);
+          sh = h - sy;
+          break;
       }
       const canvas = document.createElement('canvas');
       canvas.width = sw;
@@ -221,27 +240,25 @@ function cropImage(
 const getSlideImage: Tool = {
   name: 'get_slide_image',
   description:
-    'Capture a slide (or region) as a PNG image to verify visual quality. Use region="bottom" to zoom into the bottom half where text overflow usually occurs. Returns a base64 data URI.',
+    'Capture a slide as PNG image(s) to verify visual quality. Use region="detailed" (recommended) for a full overview + 4 zoomed quadrants in one call. Returns base64 data URI(s).',
   parameters: {
     type: 'object',
     properties: {
       slideIndex: { type: 'number', description: '0-based slide index.' },
       region: {
         type: 'string',
-        enum: ['full', 'top', 'bottom', 'left', 'right'],
+        enum: ['full', 'detailed', 'top-left', 'top-right', 'bottom-left', 'bottom-right'],
         description:
-          'Which part of the slide to capture. "full" = entire slide (default). "bottom" = bottom half (best for checking text overflow). "top"/"left"/"right" for other regions.',
+          '"detailed" (recommended) = full slide overview + 4 zoomed quadrant crops in a single response. "full" = entire slide only. Or pick a single quadrant for targeted inspection.',
       },
     },
     required: ['slideIndex'],
   },
   handler: async (args: unknown): Promise<ToolResultObject | string> => {
-    const { slideIndex, region = 'full' } = (args ?? {}) as {
+    const { slideIndex, region = 'detailed' } = (args ?? {}) as {
       slideIndex: number;
-      region?: 'full' | 'top' | 'bottom' | 'left' | 'right';
+      region?: 'full' | 'detailed' | Region;
     };
-    // Use higher resolution when cropping a region (half the data since we crop 50%)
-    const captureWidth = region === 'full' ? 600 : 960;
     try {
       return await PowerPoint.run(async context => {
         const slides = context.presentation.slides;
@@ -259,37 +276,57 @@ const getSlideImage: Tool = {
         }
 
         const slide = slides.items[slideIndex];
-        const imageResult = slide.getImageAsBase64({ width: captureWidth });
-        await context.sync();
 
-        const base64 = imageResult.value;
-
-        // Crop to requested region
-        let dataUri: string;
-        if (region !== 'full') {
-          dataUri = await cropImage(base64, region);
-        } else {
-          dataUri = `data:image/png;base64,${base64}`;
-        }
-
-        // If still too large after cropping, re-capture at smaller width
-        if (dataUri.length > 150000) {
-          const smallImage = slide.getImageAsBase64({ width: 400 });
+        if (region === 'detailed') {
+          // Capture once at high resolution, crop into overview + 4 quadrants
+          const hiRes = slide.getImageAsBase64({ width: 960 });
+          const loRes = slide.getImageAsBase64({ width: 480 });
           await context.sync();
-          let smallUri: string;
-          if (region !== 'full') {
-            smallUri = await cropImage(smallImage.value, region);
-          } else {
-            smallUri = `data:image/png;base64,${smallImage.value}`;
-          }
+
+          const overview = `data:image/png;base64,${loRes.value}`;
+          const quadrants: Region[] = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
+          const crops = await Promise.all(quadrants.map(q => cropImage(hiRes.value, q)));
+
+          const parts = [
+            `[overview] ${overview}`,
+            ...quadrants.map((q, i) => `[${q}] ${crops[i]}`),
+          ];
           return {
-            textResultForLlm: `[Auto-reduced to 400px because image was ${String(Math.round(dataUri.length / 1024))}KB — region: ${region}]\n${smallUri}`,
+            textResultForLlm: parts.join('\n'),
             resultType: 'success',
             toolTelemetry: {},
           };
         }
 
-        const label = region === 'full' ? '' : ` [region: ${region}]`;
+        // Single region or full capture
+        const isQuadrant = region !== 'full';
+        const captureWidth = isQuadrant ? 960 : 600;
+        const imageResult = slide.getImageAsBase64({ width: captureWidth });
+        await context.sync();
+
+        const base64 = imageResult.value;
+        let dataUri: string;
+        if (isQuadrant) {
+          dataUri = await cropImage(base64, region as Region);
+        } else {
+          dataUri = `data:image/png;base64,${base64}`;
+        }
+
+        // If too large, re-capture smaller
+        if (dataUri.length > 150000) {
+          const smallImage = slide.getImageAsBase64({ width: 400 });
+          await context.sync();
+          const smallUri = isQuadrant
+            ? await cropImage(smallImage.value, region as Region)
+            : `data:image/png;base64,${smallImage.value}`;
+          return {
+            textResultForLlm: `[Auto-reduced — region: ${region}]\n${smallUri}`,
+            resultType: 'success',
+            toolTelemetry: {},
+          };
+        }
+
+        const label = region === 'full' ? '' : ` [${region}]`;
         return {
           textResultForLlm: `${dataUri}${label}`,
           resultType: 'success',
