@@ -42,6 +42,8 @@ export interface UserSettings {
   importedMcpServers: McpServerConfig[];
   /** Names of currently active MCP servers. null = all servers enabled (default). */
   activeMcpServerNames: string[] | null;
+  /** Whether the built-in WorkIQ integration is enabled. */
+  workiqEnabled: boolean;
 }
 
 /** Default settings applied on first run */
@@ -53,4 +55,14 @@ export const DEFAULT_SETTINGS: UserSettings = {
   importedAgents: [],
   importedMcpServers: [],
   activeMcpServerNames: null,
+  workiqEnabled: false,
+};
+
+/** Built-in WorkIQ MCP server config */
+export const WORKIQ_MCP_SERVER: McpServerConfig = {
+  name: 'workiq',
+  description: 'Microsoft 365 Copilot — emails, meetings, documents, Teams',
+  transport: 'stdio',
+  command: 'npx',
+  args: ['-y', '@microsoft/workiq', 'mcp'],
 };

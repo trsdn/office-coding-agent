@@ -10,6 +10,7 @@
 
 import { WebSocketServer } from 'ws';
 import { CopilotClient } from '@github/copilot-sdk';
+import { loadMcpTools, closeMcpClients } from './mcpClient.mjs';
 
 // ── LSP framing helpers ─────────────────────────────────────────────────────
 
@@ -86,6 +87,9 @@ async function handleConnection(ws) {
 
   /** @type {Map<string, () => void>} */
   const eventUnsubs = new Map();
+
+  /** @type {Map<string, Array<{ name: string, client: import('@modelcontextprotocol/sdk/client/index.js').Client }>>} */
+  const sessionMcpClients = new Map();
 
   /** Send a JSON-RPC response back to the browser. */
   function sendResponse(id, result) {
@@ -193,9 +197,9 @@ async function handleConnection(ws) {
 
     switch (method) {
       case 'session.create': {
-        const { model, sessionId, systemMessage, tools: toolDefs } = params || {};
+        const { model, sessionId, systemMessage, tools: toolDefs, mcpServers } = params || {};
         console.log(
-          `[proxy] session.create requested (model=${model}, sessionId=${sessionId}, tools=${(toolDefs || []).length})`
+          `[proxy] session.create requested (model=${model}, sessionId=${sessionId}, tools=${(toolDefs || []).length}, mcpServers=${(mcpServers || []).length})`
         );
         // Build SDK Tool[] with handlers that forward tool calls to the browser
         const tools = (toolDefs || []).map(t => ({
@@ -212,6 +216,19 @@ async function handleConnection(ws) {
             return response.result;
           },
         }));
+
+        // Load MCP tools from configured servers (executed server-side)
+        const mcpTrackingKey = `__pending_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+        if (mcpServers && mcpServers.length > 0) {
+          try {
+            const { tools: mcpTools, clients: mcpClients } = await loadMcpTools(mcpServers);
+            tools.push(...mcpTools);
+            // Track clients for cleanup when session is destroyed
+            sessionMcpClients.set(mcpTrackingKey, mcpClients);
+          } catch (err) {
+            console.warn('[proxy] MCP tool loading failed:', err.message);
+          }
+        }
 
         let session;
         try {
@@ -230,6 +247,12 @@ async function handleConnection(ws) {
 
         sessions.set(session.sessionId, session);
         markHealthy();
+        // Re-key MCP clients from temp tracking key to actual session ID
+        const pendingClients = sessionMcpClients.get(mcpTrackingKey);
+        if (pendingClients) {
+          sessionMcpClients.delete(mcpTrackingKey);
+          sessionMcpClients.set(session.sessionId, pendingClients);
+        }
         console.log(`[proxy] session.create succeeded (sessionId=${session.sessionId})`);
 
         // Subscribe to all session events and forward them to the browser
@@ -264,6 +287,12 @@ async function handleConnection(ws) {
           const unsub = eventUnsubs.get(sessionId);
           unsub?.();
           eventUnsubs.delete(sessionId);
+          // Close MCP clients for this session
+          const mcpClients = sessionMcpClients.get(sessionId);
+          if (mcpClients) {
+            sessionMcpClients.delete(sessionId);
+            void closeMcpClients(mcpClients);
+          }
           await session.destroy();
           sessions.delete(sessionId);
         }
@@ -302,6 +331,12 @@ async function handleConnection(ws) {
       unsub();
     }
     eventUnsubs.clear();
+
+    // Close all MCP clients for this connection
+    for (const mcpClients of sessionMcpClients.values()) {
+      void closeMcpClients(mcpClients);
+    }
+    sessionMcpClients.clear();
 
     // Reject any pending tool.call promises — without this they hang forever
     // because the browser that was supposed to reply has disconnected.

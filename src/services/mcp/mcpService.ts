@@ -3,6 +3,8 @@ import type { McpServerConfig, McpTransportType } from '@/types';
 /** Shape accepted from both Claude Desktop and VS Code mcp.json formats */
 interface RawMcpEntry {
   url?: string;
+  command?: string;
+  args?: string[];
   type?: string;
   transport?: string;
   headers?: Record<string, string>;
@@ -16,8 +18,8 @@ interface RawMcpEntry {
  *   - Claude Desktop format: `{ mcpServers: { name: { url, type, headers } } }`
  *   - VS Code format:        `{ servers:    { name: { url, type, headers } } }`
  *
- * Only HTTP/SSE entries are included (stdio entries are silently skipped because
- * they require a Node.js child process and do not work in a browser runtime).
+ * Supports HTTP, SSE, and stdio transports. Stdio entries use `command` + `args`
+ * and are executed server-side by the proxy.
  */
 export async function parseMcpJsonFile(file: File): Promise<McpServerConfig[]> {
   if (!file.name.endsWith('.json')) {
@@ -51,25 +53,40 @@ export async function parseMcpJsonFile(file: File): Promise<McpServerConfig[]> {
   for (const [name, entry] of Object.entries(serversMap)) {
     if (typeof entry !== 'object' || entry === null) continue;
 
+    const rawTransport = (entry.type ?? entry.transport ?? '').toLowerCase();
     const url = entry.url;
-    if (typeof url !== 'string' || !url) continue; // skip stdio entries (no url)
+    const command = entry.command;
 
-    const rawTransport = (entry.type ?? entry.transport ?? 'http').toLowerCase();
-    if (rawTransport !== 'http' && rawTransport !== 'sse') continue; // skip unknown/stdio
+    // stdio entry: has command, no url
+    if (typeof command === 'string' && command) {
+      configs.push({
+        name,
+        description: typeof entry.description === 'string' ? entry.description : undefined,
+        transport: 'stdio',
+        command,
+        args: Array.isArray(entry.args) ? entry.args.map(String) : [],
+      });
+      continue;
+    }
+
+    // http/sse entry: has url and valid transport
+    if (typeof url !== 'string' || !url) continue;
+    if (rawTransport && rawTransport !== 'http' && rawTransport !== 'sse') continue; // skip unknown (e.g. grpc)
+    const transport = rawTransport === 'sse' ? 'sse' : 'http';
 
     configs.push({
       name,
       description: typeof entry.description === 'string' ? entry.description : undefined,
       url,
-      transport: rawTransport as McpTransportType,
+      transport: transport as McpTransportType,
       headers: entry.headers,
     });
   }
 
   if (configs.length === 0) {
     throw new Error(
-      'No valid HTTP/SSE MCP servers found in mcp.json. ' +
-        'Make sure each entry has a "url" and an optional "type" of "http" or "sse".'
+      'No valid MCP servers found in mcp.json. ' +
+        'Each entry needs either a "url" (http/sse) or a "command" (stdio).'
     );
   }
 

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { WORKIQ_MCP_SERVER } from '@/types';
 import type { AgentConfig, AgentSkill, McpServerConfig, CopilotModel } from '@/types';
 
 const TEST_MODELS: CopilotModel[] = [
@@ -247,5 +248,58 @@ describe('settingsStore — MCP servers', () => {
     useSettingsStore.getState().reset();
     expect(useSettingsStore.getState().importedMcpServers).toEqual([]);
     expect(useSettingsStore.getState().activeMcpServerNames).toBeNull();
+  });
+});
+
+// ─── WorkIQ toggle ───
+
+describe('settingsStore — workiq', () => {
+  it('workiqEnabled defaults to false', () => {
+    expect(useSettingsStore.getState().workiqEnabled).toBe(false);
+  });
+
+  it('toggleWorkiq enables WorkIQ when disabled', () => {
+    useSettingsStore.getState().toggleWorkiq();
+    expect(useSettingsStore.getState().workiqEnabled).toBe(true);
+  });
+
+  it('toggleWorkiq disables WorkIQ when enabled', () => {
+    useSettingsStore.getState().toggleWorkiq();
+    useSettingsStore.getState().toggleWorkiq();
+    expect(useSettingsStore.getState().workiqEnabled).toBe(false);
+  });
+
+  it('reset clears workiqEnabled', () => {
+    useSettingsStore.getState().toggleWorkiq();
+    useSettingsStore.getState().reset();
+    expect(useSettingsStore.getState().workiqEnabled).toBe(false);
+  });
+});
+
+// ─── WORKIQ_MCP_SERVER constant ───
+
+describe('WORKIQ_MCP_SERVER', () => {
+  it('is a valid stdio MCP server config', () => {
+    expect(WORKIQ_MCP_SERVER).toMatchObject({
+      name: 'workiq',
+      transport: 'stdio',
+      command: 'npx',
+      args: ['-y', '@microsoft/workiq', 'mcp'],
+    });
+  });
+
+  it('has a description', () => {
+    expect(typeof WORKIQ_MCP_SERVER.description).toBe('string');
+    expect(WORKIQ_MCP_SERVER.description!.length).toBeGreaterThan(0);
+  });
+
+  it('does not have a url (stdio transport)', () => {
+    expect(WORKIQ_MCP_SERVER.url).toBeUndefined();
+  });
+
+  it('uses a command from the server-side allowlist', () => {
+    // Must match ALLOWED_STDIO_COMMANDS in src/mcpClient.mjs
+    const allowedCommands = ['npx', 'node', 'python', 'python3'];
+    expect(allowedCommands).toContain(WORKIQ_MCP_SERVER.command);
   });
 });
