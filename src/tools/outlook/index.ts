@@ -943,7 +943,7 @@ const getDiagnostics: Tool = {
 const getAppointments: Tool = {
   name: 'get_appointments',
   description:
-    'Get calendar appointments for a date range using Exchange Web Services. Returns subject, start time, end time, and location for each appointment.',
+    'Get calendar appointments for a date range using Exchange Web Services. Returns subject, start time, end time, and location. Note: May not work in Microsoft 365 tenants where legacy EWS tokens are disabled (since 2025).',
   parameters: {
     type: 'object',
     properties: {
@@ -1006,7 +1006,16 @@ const getAppointments: Tool = {
       const response = await new Promise<string>((resolve, reject) => {
         mailbox.makeEwsRequestAsync(soapRequest, result => {
           if (result.status === Office.AsyncResultStatus.Succeeded) resolve(result.value);
-          else reject(new Error(result.error?.message ?? 'EWS request failed'));
+          else {
+            const errMsg = result.error?.message ?? 'EWS request failed';
+            reject(
+              new Error(
+                `Calendar access failed: ${errMsg}. ` +
+                  'Note: Legacy Exchange tokens are disabled in most Microsoft 365 tenants since 2025. ' +
+                  'Calendar access may require Microsoft Graph API with nested app authentication.'
+              )
+            );
+          }
         });
       });
 
