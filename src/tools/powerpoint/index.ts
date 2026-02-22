@@ -1295,7 +1295,7 @@ const applySlideLayout: Tool = {
 
 const getSelectedSlides: Tool = {
   name: 'get_selected_slides',
-  description: 'Get the currently selected slides in the presentation.',
+  description: 'Get the currently selected slides. Returns both the 1-based slide number (what the user sees) and the 0-based index (for use with other tools).',
   parameters: { type: 'object', properties: {}, required: [] },
   handler: async (): Promise<ToolResultObject | string> => {
     try {
@@ -1304,13 +1304,14 @@ const getSelectedSlides: Tool = {
         selected.load('items');
         await context.sync();
         if (selected.items.length === 0) return 'No slides selected.';
-        const indices: string[] = [];
+        const info: string[] = [];
         for (const slide of selected.items) {
           slide.load('index');
           await context.sync();
-          indices.push(String(slide.index));
+          // slide.index is 1-based; tools use 0-based slideIndex
+          info.push(`Slide ${String(slide.index)} (use slideIndex=${String(slide.index - 1)} in tools)`);
         }
-        return `Selected slides: ${indices.map(i => `slide ${i}`).join(', ')}`;
+        return `Currently on: ${info.join(', ')}`;
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
