@@ -21,14 +21,29 @@ interface OfficeRuntimeStorage {
 }
 
 function getStorage(): OfficeRuntimeStorage {
-  if (typeof OfficeRuntime === 'undefined' || !OfficeRuntime?.storage) {
-    throw new Error(
-      '[officeStorage] OfficeRuntime.storage is not available. ' +
-        'This add-in requires SharedRuntime — ensure the manifest declares it ' +
-        'and the add-in is running inside the Office host.'
-    );
+  if (typeof OfficeRuntime !== 'undefined' && OfficeRuntime?.storage) {
+    return OfficeRuntime.storage as OfficeRuntimeStorage;
   }
-  return OfficeRuntime.storage as OfficeRuntimeStorage;
+
+  // Fallback to localStorage for hosts without SharedRuntime (e.g. Outlook)
+  if (typeof localStorage !== 'undefined') {
+    return {
+      getItem: (key: string) => Promise.resolve(localStorage.getItem(key)),
+      setItem: (key: string, value: string) => {
+        localStorage.setItem(key, value);
+        return Promise.resolve();
+      },
+      removeItem: (key: string) => {
+        localStorage.removeItem(key);
+        return Promise.resolve();
+      },
+    };
+  }
+
+  throw new Error(
+    '[officeStorage] No storage backend available. ' +
+      'OfficeRuntime.storage requires SharedRuntime and localStorage is unavailable.'
+  );
 }
 
 export const officeStorage: StateStorage = {

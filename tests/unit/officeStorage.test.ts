@@ -43,19 +43,17 @@ describe('officeStorage', () => {
     expect(await officeStorage.getItem('large')).toBe(large);
   });
 
-  it('throws a clear error when OfficeRuntime is not available', async () => {
+  it('falls back to localStorage when OfficeRuntime is not available', async () => {
     const saved = (globalThis as Record<string, unknown>).OfficeRuntime;
     delete (globalThis as Record<string, unknown>).OfficeRuntime;
 
-    await expect(officeStorage.getItem('key')).rejects.toThrow(
-      'OfficeRuntime.storage is not available'
-    );
-    await expect(officeStorage.setItem('key', 'v')).rejects.toThrow(
-      'OfficeRuntime.storage is not available'
-    );
-    await expect(officeStorage.removeItem('key')).rejects.toThrow(
-      'OfficeRuntime.storage is not available'
-    );
+    // Should not throw — falls back to localStorage
+    await officeStorage.setItem('fallback-key', 'fallback-value');
+    const result = await officeStorage.getItem('fallback-key');
+    expect(result).toBe('fallback-value');
+    await officeStorage.removeItem('fallback-key');
+    const removed = await officeStorage.getItem('fallback-key');
+    expect(removed).toBeNull();
 
     (globalThis as Record<string, unknown>).OfficeRuntime = saved;
   });
