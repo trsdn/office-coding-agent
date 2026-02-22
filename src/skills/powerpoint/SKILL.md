@@ -171,20 +171,22 @@ When source content has more items than space allows:
 - **Bold all headings and inline labels**: Use `bold: true` for slide titles, section headers, and labels like "Status:", "Note:"
 - **Consistent bullet style**: Use `{ bullet: true }` or `{ bullet: { type: "number" } }` — don't use unicode bullets (•, ‣, etc.)
 - **Multi-item content**: Create separate array items for each bullet/paragraph — never concatenate into one string
-- **Bold label + description**: NEVER merge into one text run (renders as "LabelDescription" with no space). Always use a colon separator in the same run or put the description on a separate indented line.
+- **Bold label + description**: Use a single string with colon separator (`"Label: description"`) or put the description on a separate indented sub-line. NEVER use nested text arrays like `{ text: [{...}, {...}] }` — this renders as `[object Object]` in PowerPoint.
 
 **❌ WRONG** — all items in one text element:
 ```js
 slide.addText("Step 1: Do the first thing. Step 2: Do the second thing.", { x: 0.5, y: 2, w: 9, h: 4, fontSize: 18 });
 ```
 
-**❌ WRONG** — bold label merges into description (renders "Machine LearningSystems that…"):
+**❌ WRONG** — nested text array (renders as "[object Object],[object Object]"):
 ```js
-{ text: "Machine Learning", options: { bold: true, bullet: true } },
-{ text: "Systems that learn from data", options: {} },
+{ text: [
+  { text: "Machine Learning: ", options: { bold: true } },
+  { text: "Systems that learn from data" }
+], options: { bullet: true } },
 ```
 
-**✅ CORRECT** — separate elements with structure:
+**✅ CORRECT** — flat array with simple strings:
 ```js
 slide.addText([
   { text: "Step 1: Do the first thing", options: { bullet: true, fontSize: 16 } },
@@ -192,17 +194,20 @@ slide.addText([
 ], { x: 0.5, y: 2, w: 9, h: 4 });
 ```
 
-**✅ CORRECT** — bold label with description properly separated:
+**✅ CORRECT** — bold label with colon in single string:
 ```js
-// Option A: Colon separator in same line (two text runs)
-{ text: [
-  { text: "Machine Learning: ", options: { bold: true } },
-  { text: "Systems that learn from data" }
-], options: { bullet: true, fontSize: 14 } },
+slide.addText([
+  { text: "Machine Learning: Systems that learn from data", options: { bullet: true, fontSize: 14 } },
+  { text: "Computer Vision: Machines interpreting visual info", options: { bullet: true, fontSize: 14 } },
+], { x: 0.5, y: 2, w: 9, h: 4 });
+```
 
-// Option B: Description on indented sub-line
-{ text: "Machine Learning", options: { bold: true, bullet: true, fontSize: 14 } },
-{ text: "Systems that learn from data", options: { fontSize: 12, indentLevel: 1 } },
+**✅ CORRECT** — bold heading + indented description on next line:
+```js
+slide.addText([
+  { text: "Machine Learning", options: { bold: true, bullet: true, fontSize: 14 } },
+  { text: "Systems that learn from data", options: { fontSize: 12, indentLevel: 1 } },
+], { x: 0.5, y: 2, w: 9, h: 4 });
 ```
 
 - **Color values**: Use 6-digit hex without # prefix: `"4472C4"` not `"#4472C4"`
