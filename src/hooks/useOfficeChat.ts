@@ -146,7 +146,8 @@ export function useOfficeChat(host: OfficeHostApp) {
 
     if (!userText.trim()) return;
 
-    if (!sessionRef.current) {
+    const client = clientRef.current;
+    if (!sessionRef.current || !client) {
       const errorMsg: ThreadMessageLike = {
         id: generateId(),
         role: 'assistant',
@@ -169,6 +170,87 @@ export function useOfficeChat(host: OfficeHostApp) {
         },
         errorMsg,
       ]);
+      return;
+    }
+
+    // Detect multi-slide PowerPoint requests → use orchestrator
+    const isMultiSlideRequest =
+      host === 'powerpoint' &&
+      /\b(\d+)\s*(slides?|folien?|seiten?)\b/i.test(userText) &&
+      !userText.toLowerCase().includes('this slide');
+
+    if (isMultiSlideRequest) {
+      const assistantId = generateId();
+      cancelRef.current = false;
+
+      setMessages(prev => [
+        ...prev,
+        {
+          id: generateId(),
+          role: 'user',
+          content: [{ type: 'text', text: userText }],
+          createdAt: new Date(),
+        },
+        {
+          id: assistantId,
+          role: 'assistant',
+          content: [{ type: 'text', text: '' }],
+          status: { type: 'running' },
+          createdAt: new Date(),
+        },
+      ]);
+      setIsRunning(true);
+
+      let streamText = '';
+      const updateText = (extra?: Partial<Pick<ThreadMessageLike, 'status'>>) => {
+        setMessages(prev =>
+          prev.map(m =>
+            m.id === assistantId
+              ? { ...m, content: [{ type: 'text', text: streamText }], ...extra }
+              : m
+          )
+        );
+      };
+
+      const abortController = new AbortController();
+      const origCancel = cancelRef.current;
+      // Check cancel periodically
+      const cancelCheck = setInterval(() => {
+        if (cancelRef.current && !origCancel) abortController.abort();
+      }, 500);
+
+      try {
+        const { orchestrateDeck } = await import('@/hooks/useDeckOrchestrator');
+        await orchestrateDeck(
+          client,
+          activeModel,
+          userText,
+          {
+            onPlan: () => { /* plan received */ },
+            onSlideProgress: () => { /* slide status changed */ },
+            onText: (text: string) => {
+              streamText += text;
+              updateText();
+            },
+            onWorkerEvent: () => { /* worker tool events */ },
+            onComplete: () => {
+              updateText({ status: { type: 'complete', reason: 'stop' } });
+            },
+            onError: (error: string) => {
+              streamText += `\n\n❌ Error: ${error}`;
+              updateText({ status: { type: 'incomplete', reason: 'error', error } });
+            },
+          },
+          abortController.signal,
+        );
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        streamText += `\n\n❌ ${errMsg}`;
+        updateText({ status: { type: 'incomplete', reason: 'error', error: errMsg } });
+      } finally {
+        clearInterval(cancelCheck);
+        setIsRunning(false);
+      }
       return;
     }
 
@@ -287,5 +369,5 @@ export function useOfficeChat(host: OfficeHostApp) {
     convertMessage: (msg: ThreadMessageLike) => msg,
   });
 
-  return { runtime, sessionError, isConnecting, clearMessages };
+  return { runtime, sessionError, isConnecting, clearMessages, clientRef };
 }
