@@ -12,69 +12,74 @@ async function getSlideCount(): Promise<number> {
   });
 }
 
-async function loadShapeTexts(
-  shapes: PowerPoint.ShapeCollection | PowerPoint.ShapeScopedCollection,
-  context: PowerPoint.RequestContext
-): Promise<string[]> {
-  shapes.load('items');
-  await context.sync();
-
-  // Load text and type info for all shapes, including grouped shapes
-  const groupShapes: PowerPoint.Shape[] = [];
-  for (const shape of shapes.items) {
-    shape.load('type');
-    try {
-      shape.textFrame.textRange.load('text');
-    } catch {
-      // shape may not have a textFrame (SmartArt, charts, etc.)
-    }
-  }
-  await context.sync();
-
-  // Collect texts from top-level shapes
-  const texts: string[] = [];
-  for (const shape of shapes.items) {
-    try {
-      const text = shape.textFrame.textRange.text?.trim() ?? '';
-      if (text.length > 0) texts.push(text);
-    } catch {
-      // no textFrame
-    }
-    // Queue grouped shapes for recursive loading
-    if (shape.type === PowerPoint.ShapeType.group) {
-      groupShapes.push(shape);
-    }
-  }
-
-  // Recurse into group shapes
-  for (const group of groupShapes) {
-    try {
-      const groupTexts = await loadShapeTexts(group.group.shapes, context);
-      texts.push(...groupTexts);
-    } catch {
-      // group access may fail for SmartArt or unsupported shape types
-    }
-  }
-
-  return texts;
-}
-
 async function getSlideTextContent(startIdx: number, endIdx: number): Promise<string[]> {
   return PowerPoint.run(async context => {
     const slides = context.presentation.slides;
     slides.load('items');
     await context.sync();
 
-    const results: string[] = [];
     const slideRefs = slides.items.slice(startIdx, endIdx + 1);
+    for (const slide of slideRefs) {
+      slide.shapes.load('items');
+    }
+    await context.sync();
 
+    // First pass: try loading textFrame for each shape (will silently fail for non-text shapes)
+    for (const slide of slideRefs) {
+      for (const shape of slide.shapes.items) {
+        try {
+          shape.textFrame.textRange.load('text');
+        } catch {
+          // shape may not have a textFrame (SmartArt, charts, etc.)
+        }
+      }
+    }
+    await context.sync();
+
+    const results: string[] = [];
     for (let i = 0; i < slideRefs.length; i++) {
-      const texts = await loadShapeTexts(slideRefs[i].shapes, context);
-      const hasGraphics = slideRefs[i].shapes.items.some(
-        s => s.type === PowerPoint.ShapeType.group || s.type === PowerPoint.ShapeType.smartArt
-      );
+      const slide = slideRefs[i];
+      const texts: string[] = [];
+      let hasNonTextShapes = false;
+
+      for (const shape of slide.shapes.items) {
+        try {
+          const text = shape.textFrame.textRange.text?.trim() ?? '';
+          if (text.length > 0) texts.push(text);
+        } catch {
+          hasNonTextShapes = true;
+        }
+      }
+
+      // Try to extract text from grouped shapes (SmartArt, etc.)
+      for (const shape of slide.shapes.items) {
+        try {
+          const groupShapes = shape.group.shapes;
+          groupShapes.load('items');
+          await context.sync();
+          for (const gs of groupShapes.items) {
+            try {
+              gs.textFrame.textRange.load('text');
+            } catch {
+              // skip
+            }
+          }
+          await context.sync();
+          for (const gs of groupShapes.items) {
+            try {
+              const text = gs.textFrame.textRange.text?.trim() ?? '';
+              if (text.length > 0) texts.push(text);
+            } catch {
+              // skip
+            }
+          }
+        } catch {
+          // not a group shape or group access not supported
+        }
+      }
+
       let label = texts.length > 0 ? texts.join(' | ') : '(no text)';
-      if (texts.length === 0 && hasGraphics) {
+      if (texts.length === 0 && hasNonTextShapes) {
         label = '(contains graphics/SmartArt — use get_slide_image to see visual content)';
       }
       results.push(`Slide ${startIdx + i + 1}: ${label}`);
