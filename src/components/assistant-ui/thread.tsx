@@ -20,6 +20,7 @@ import {
   SquareIcon,
 } from 'lucide-react';
 import type { FC } from 'react';
+import { detectOfficeHost } from '@/services/office/host';
 
 export const Thread: FC = () => {
   return (
@@ -67,16 +68,44 @@ interface SuggestionItem {
   autoSend: boolean;
 }
 
-const SUGGESTIONS: SuggestionItem[] = [
-  { prompt: 'Summarize my data', autoSend: true },
-  { prompt: 'Create a chart from selected data', autoSend: true },
-  { prompt: 'Format the table as currency', autoSend: true },
-  { prompt: 'Find and highlight duplicates', autoSend: true },
-  { prompt: 'Add a formula to calculate totals', autoSend: true },
-  { prompt: 'Clean up and organize my sheet', autoSend: true },
-];
+const SUGGESTIONS_BY_HOST: Record<string, SuggestionItem[]> = {
+  excel: [
+    { prompt: 'Summarize my data', autoSend: true },
+    { prompt: 'Create a chart from selected data', autoSend: true },
+    { prompt: 'Format the table as currency', autoSend: true },
+    { prompt: 'Find and highlight duplicates', autoSend: true },
+    { prompt: 'Add a formula to calculate totals', autoSend: true },
+    { prompt: 'Clean up and organize my sheet', autoSend: true },
+  ],
+  outlook: [
+    { prompt: 'Summarize this email', autoSend: true },
+    { prompt: 'Draft a reply', autoSend: true },
+    { prompt: 'List the attachments', autoSend: true },
+    { prompt: 'Extract action items from this email', autoSend: true },
+    { prompt: 'Translate this email to English', autoSend: true },
+    { prompt: 'Who is this email from?', autoSend: true },
+  ],
+  powerpoint: [
+    { prompt: 'Summarize this presentation', autoSend: true },
+    { prompt: 'Add a new slide', autoSend: true },
+    { prompt: 'Get an overview of all slides', autoSend: true },
+    { prompt: 'Update the speaker notes', autoSend: true },
+  ],
+  word: [
+    { prompt: 'Summarize this document', autoSend: true },
+    { prompt: 'Find and replace text', autoSend: true },
+    { prompt: 'Get the document structure', autoSend: true },
+    { prompt: 'Insert a table', autoSend: true },
+  ],
+};
+
+function getSuggestions(): SuggestionItem[] {
+  const host = detectOfficeHost();
+  return SUGGESTIONS_BY_HOST[host] ?? SUGGESTIONS_BY_HOST.excel;
+}
 
 const ThreadWelcome: FC = () => {
+  const suggestions = getSuggestions();
   return (
     <div className="aui-thread-welcome-root my-auto flex w-full grow flex-col">
       <div className="aui-thread-welcome-center flex w-full grow flex-col items-center justify-center">
@@ -90,7 +119,7 @@ const ThreadWelcome: FC = () => {
         </div>
 
         <div className="mt-6 flex w-full flex-col gap-2 px-2">
-          {SUGGESTIONS.map((suggestion, idx) => (
+          {suggestions.map((suggestion, idx) => (
             <ThreadPrimitive.Suggestion
               key={suggestion.prompt}
               {...suggestion}
