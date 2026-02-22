@@ -171,18 +171,38 @@ When source content has more items than space allows:
 - **Bold all headings and inline labels**: Use `bold: true` for slide titles, section headers, and labels like "Status:", "Note:"
 - **Consistent bullet style**: Use `{ bullet: true }` or `{ bullet: { type: "number" } }` — don't use unicode bullets (•, ‣, etc.)
 - **Multi-item content**: Create separate array items for each bullet/paragraph — never concatenate into one string
+- **Bold label + description**: NEVER merge into one text run (renders as "LabelDescription" with no space). Always use a colon separator in the same run or put the description on a separate indented line.
 
 **❌ WRONG** — all items in one text element:
 ```js
 slide.addText("Step 1: Do the first thing. Step 2: Do the second thing.", { x: 0.5, y: 2, w: 9, h: 4, fontSize: 18 });
 ```
 
+**❌ WRONG** — bold label merges into description (renders "Machine LearningSystems that…"):
+```js
+{ text: "Machine Learning", options: { bold: true, bullet: true } },
+{ text: "Systems that learn from data", options: {} },
+```
+
 **✅ CORRECT** — separate elements with structure:
 ```js
 slide.addText([
-  { text: "Step 1: Do the first thing", options: { bullet: true, fontSize: 18 } },
-  { text: "Step 2: Do the second thing", options: { bullet: true, fontSize: 18 } },
+  { text: "Step 1: Do the first thing", options: { bullet: true, fontSize: 16 } },
+  { text: "Step 2: Do the second thing", options: { bullet: true, fontSize: 16 } },
 ], { x: 0.5, y: 2, w: 9, h: 4 });
+```
+
+**✅ CORRECT** — bold label with description properly separated:
+```js
+// Option A: Colon separator in same line (two text runs)
+{ text: [
+  { text: "Machine Learning: ", options: { bold: true } },
+  { text: "Systems that learn from data" }
+], options: { bullet: true, fontSize: 14 } },
+
+// Option B: Description on indented sub-line
+{ text: "Machine Learning", options: { bold: true, bullet: true, fontSize: 14 } },
+{ text: "Systems that learn from data", options: { fontSize: 12, indentLevel: 1 } },
 ```
 
 - **Color values**: Use 6-digit hex without # prefix: `"4472C4"` not `"#4472C4"`

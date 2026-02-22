@@ -44,7 +44,20 @@ slide.addTable([["Header 1", "Header 2"], ["Row 1", "Data"]], { x: 0.5, y: 2, w:
 
 // Shape
 slide.addShape("rect", { x: 1, y: 1, w: 3, h: 1, fill: { color: "4472C4" } });
+
+// Bold label + description (ALWAYS separate text runs — never merge into one)
+slide.addText([
+  { text: "Machine Learning: ", options: { bold: true, fontSize: 14 } },
+  { text: "Systems that learn from data" }
+], { bullet: true, fontSize: 14 });
+// OR use indented sub-line:
+slide.addText([
+  { text: "Machine Learning", options: { bold: true, bullet: true, fontSize: 14 } },
+  { text: "Systems that learn from data", options: { fontSize: 12, indentLevel: 1 } },
+]);
 ```
+
+**⚠️ NEVER merge bold label and description into one text run** — they will render without spacing (e.g., "Machine LearningSystems that…"). Always use a colon separator in the same run OR put the description on a separate indented line.
 
 All positions (x, y, w, h) are in **inches**. Standard slide is 10" × 7.5".
 
