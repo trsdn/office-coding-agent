@@ -240,24 +240,24 @@ function cropImage(base64: string, region: Region): Promise<string> {
 const getSlideImage: Tool = {
   name: 'get_slide_image',
   description:
-    'Capture a slide as PNG image(s) to verify visual quality. Use region="detailed" (recommended) for a full overview + 4 zoomed quadrants in one call. Returns base64 data URI(s).',
+    'Capture a slide (or quadrant) as a PNG image to verify visual quality. Default returns the full slide. Use a quadrant like "bottom-left" or "bottom-right" to zoom in and check for text overflow.',
   parameters: {
     type: 'object',
     properties: {
       slideIndex: { type: 'number', description: '0-based slide index.' },
       region: {
         type: 'string',
-        enum: ['full', 'detailed', 'top-left', 'top-right', 'bottom-left', 'bottom-right'],
+        enum: ['full', 'top-left', 'top-right', 'bottom-left', 'bottom-right'],
         description:
-          '"detailed" (recommended) = full slide overview + 4 zoomed quadrant crops in a single response. "full" = entire slide only. Or pick a single quadrant for targeted inspection.',
+          '"full" (default) = entire slide at 600px. Quadrants capture at 960px then crop to that quarter — 2x detail for checking text overflow, card edges, etc.',
       },
     },
     required: ['slideIndex'],
   },
   handler: async (args: unknown): Promise<ToolResultObject | string> => {
-    const { slideIndex, region = 'detailed' } = (args ?? {}) as {
+    const { slideIndex, region = 'full' } = (args ?? {}) as {
       slideIndex: number;
-      region?: 'full' | 'detailed' | Region;
+      region?: 'full' | Region;
     };
     try {
       return await PowerPoint.run(async context => {
@@ -276,27 +276,6 @@ const getSlideImage: Tool = {
         }
 
         const slide = slides.items[slideIndex];
-
-        if (region === 'detailed') {
-          // Capture once at high resolution, crop into overview + 4 quadrants
-          const hiRes = slide.getImageAsBase64({ width: 960 });
-          const loRes = slide.getImageAsBase64({ width: 480 });
-          await context.sync();
-
-          const overview = `data:image/png;base64,${loRes.value}`;
-          const quadrants: Region[] = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
-          const crops = await Promise.all(quadrants.map(q => cropImage(hiRes.value, q)));
-
-          const parts = [
-            `[overview] ${overview}`,
-            ...quadrants.map((q, i) => `[${q}] ${crops[i]}`),
-          ];
-          return {
-            textResultForLlm: parts.join('\n'),
-            resultType: 'success',
-            toolTelemetry: {},
-          };
-        }
 
         // Single region or full capture
         const isQuadrant = region !== 'full';
