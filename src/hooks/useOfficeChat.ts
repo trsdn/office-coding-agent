@@ -105,8 +105,12 @@ export function useOfficeChat(host: OfficeHostApp) {
       const skillContext = buildSkillContext(activeSkillNames ?? undefined, host);
       const systemContent = `${buildSystemPrompt(host)}\n\n${agentInstructions}${skillContext}`;
 
-      const activeMcp = resolveActiveMcpServers(importedMcpServers, activeMcpServerNames);
-      if (workiqEnabled) activeMcp.push(WORKIQ_MCP_SERVER);
+      const activeMcp = resolveActiveMcpServers(importedMcpServers, activeMcpServerNames).filter(
+        s => s.name !== 'workiq'
+      );
+      if (workiqEnabled) {
+        activeMcp.push(WORKIQ_MCP_SERVER);
+      }
 
       const session = await withTimeout(
         client.createSession(
