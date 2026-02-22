@@ -18,7 +18,7 @@ Activate this skill when creating or fixing slides with `add_slide_from_code`. C
 - **Bold all headings and inline labels**: Use `bold: true` for slide titles, section headers, and labels
 - **Consistent bullet style**: Use `{ bullet: true }` or `{ bullet: { type: "number" } }` — don't use unicode bullets (•, ‣, etc.)
 - **Multi-item content**: Create separate array items for each bullet/paragraph — never concatenate into one string
-- **Bold label + description**: Use a single string with colon separator (`"Label: description"`) or put the description on a separate indented sub-line. NEVER use nested text arrays — they render as `[object Object]`.
+- **Bold label + description**: ALWAYS combine into ONE string with colon: `"Label: Description"`. NEVER use separate text runs for bold label + normal description — they merge without spacing (renders "LabelDescription"). NEVER use nested text arrays — they render as `[object Object]`.
 
 ### Colors and positioning
 - **Color values**: Use 6-digit hex without # prefix: `"4472C4"` not `"#4472C4"`
@@ -41,6 +41,12 @@ Activate this skill when creating or fixing slides with `add_slide_from_code`. C
 ### ❌ All items in one text element
 ```js
 slide.addText("Step 1: Do the first thing. Step 2: Do the second thing.", { x: 0.5, y: 2, w: 9, h: 4, fontSize: 18 });
+```
+
+### ❌ Separate bold label + normal description (renders "Machine LearningSystems that…")
+```js
+{ text: "Machine Learning", options: { bold: true, bullet: true } },
+{ text: "Systems that learn from data", options: { fontSize: 12 } },
 ```
 
 ### ❌ Nested text array (renders as "[object Object],[object Object]")
@@ -71,19 +77,11 @@ slide.addText([
 ], { x: 0.5, y: 2, w: 9, h: 4 });
 ```
 
-### ✅ Bold label with colon in single string
+### ✅ Label with colon in single string (THE ONLY correct way for label+description)
 ```js
 slide.addText([
   { text: "Machine Learning: Systems that learn from data", options: { bullet: true, fontSize: 14 } },
   { text: "Computer Vision: Machines interpreting visual info", options: { bullet: true, fontSize: 14 } },
-], { x: 0.5, y: 2, w: 9, h: 4 });
-```
-
-### ✅ Bold heading + indented description on next line
-```js
-slide.addText([
-  { text: "Machine Learning", options: { bold: true, bullet: true, fontSize: 14 } },
-  { text: "Systems that learn from data", options: { fontSize: 12, indentLevel: 1 } },
 ], { x: 0.5, y: 2, w: 9, h: 4 });
 ```
 

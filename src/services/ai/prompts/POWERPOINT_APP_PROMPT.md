@@ -45,23 +45,25 @@ slide.addTable([["Header 1", "Header 2"], ["Row 1", "Data"]], { x: 0.5, y: 2, w:
 // Shape
 slide.addShape("rect", { x: 1, y: 1, w: 3, h: 1, fill: { color: "4472C4" } });
 
-// Bold label + description — use a SINGLE string with colon, or indented sub-line
-// Option A: Single string with bold prefix (simplest, most reliable)
+// Label + description — ALWAYS use "Label: Description" as a SINGLE string
 slide.addText([
   { text: "Machine Learning: Systems that learn from data", options: { bullet: true, fontSize: 14 } },
   { text: "Computer Vision: Machines interpreting visual information", options: { bullet: true, fontSize: 14 } },
 ], { x: 0.5, y: 2, w: 9, h: 4 });
-
-// Option B: Bold heading + indented description on next line
-slide.addText([
-  { text: "Machine Learning", options: { bold: true, bullet: true, fontSize: 14 } },
-  { text: "Systems that learn from data", options: { fontSize: 12, indentLevel: 1 } },
-  { text: "Computer Vision", options: { bold: true, bullet: true, fontSize: 14 } },
-  { text: "Machines interpreting visual information", options: { fontSize: 12, indentLevel: 1 } },
-], { x: 0.5, y: 2, w: 9, h: 4 });
 ```
 
-**⚠️ NEVER use nested text arrays** like `{ text: [{ text: "bold" }, { text: "normal" }] }` — this renders as `[object Object]` in PowerPoint. Always use flat array items with simple string `text` properties.
+**⚠️ CRITICAL: When a bullet has a label and description, ALWAYS combine them into ONE string with a colon separator.** Never use separate text runs for bold label + normal description — they merge without spacing (renders "LabelDescription"). Never use nested text arrays — they render as `[object Object]`.
+
+**❌ WRONG** — separate bold + normal runs (renders "Machine LearningSystems that…"):
+```js
+{ text: "Machine Learning", options: { bold: true, bullet: true } },
+{ text: "Systems that learn from data", options: { fontSize: 12 } },
+```
+
+**✅ CORRECT** — single string with colon:
+```js
+{ text: "Machine Learning: Systems that learn from data", options: { bullet: true, fontSize: 14 } },
+``` Always use flat array items with simple string `text` properties.
 
 All positions (x, y, w, h) are in **inches**. Standard slide is 10" × 7.5".
 

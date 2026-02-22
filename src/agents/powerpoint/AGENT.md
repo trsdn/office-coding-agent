@@ -60,7 +60,7 @@ When generating PptxGenJS code:
 - **Bold all headings and labels**: `bold: true` for titles, section headers, inline labels
 - **Proper bullets**: Use `{ bullet: true }` or `{ bullet: { type: "number" } }` — never unicode bullets
 - **Separate items**: Each bullet/step gets its own array element — never concatenate into one string
-- **Bold label + description**: Use a single string with colon separator (`"Label: description"`) or put the description on a separate indented sub-line (`indentLevel: 1`). NEVER use nested text arrays like `{ text: [{...}, {...}] }` — this renders as `[object Object]`.
+- **Label + description in bullets**: ALWAYS use a single string: `"Label: Description text here"`. NEVER use separate text runs for bold label + normal description — they merge without spacing. NEVER use nested text arrays — they render as `[object Object]`.
 - **Color format**: 6-digit hex without # prefix: `"4472C4"` not `"#4472C4"`
 - **Safe margins**: x ≥ 0.5, y ≥ 0.5, x+w ≤ 9.5, y+h ≤ 7.0
 - **Minimum fonts**: Title ≥ 28pt, subtitle ≥ 18pt, body ≥ 14pt, cards/columns ≥ 11pt
