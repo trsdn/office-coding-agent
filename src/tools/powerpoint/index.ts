@@ -68,6 +68,22 @@ const getPresentationOverview: Tool = {
       const slideCount = await getSlideCount();
       if (slideCount === 0) return 'Presentation has no slides.';
 
+      // Try to read slide dimensions
+      let sizeInfo = '';
+      try {
+        await PowerPoint.run(async context => {
+          const pageSetup = context.presentation.pageSetup;
+          pageSetup.load('slideWidth,slideHeight');
+          await context.sync();
+          const w = Math.round((pageSetup.slideWidth / 72) * 100) / 100;
+          const h = Math.round((pageSetup.slideHeight / 72) * 100) / 100;
+          const ratio = Math.abs(w / h - 16 / 9) < 0.05 ? '16:9' : Math.abs(w / h - 4 / 3) < 0.05 ? '4:3' : 'custom';
+          sizeInfo = `\nSlide size: ${String(w)}" × ${String(h)}" (${ratio})`;
+        });
+      } catch {
+        // pageSetup unavailable on older API versions
+      }
+
       const slideOverviews: string[] = [];
       for (let i = 0; i < slideCount; i += CHUNK_SIZE) {
         const chunkEnd = Math.min(i + CHUNK_SIZE - 1, slideCount - 1);
@@ -75,7 +91,7 @@ const getPresentationOverview: Tool = {
         slideOverviews.push(...chunk);
       }
 
-      return `Presentation Overview\n${'='.repeat(40)}\nTotal slides: ${String(slideCount)}\n\n${slideOverviews.join('\n')}`;
+      return `Presentation Overview\n${'='.repeat(40)}\nTotal slides: ${String(slideCount)}${sizeInfo}\n\n${slideOverviews.join('\n')}`;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       return { textResultForLlm: msg, resultType: 'failure', error: msg, toolTelemetry: {} };
@@ -403,10 +419,10 @@ const addSlideFromCode: Tool = {
 Provide a JavaScript function body that receives a 'slide' parameter (PptxGenJS Slide object).
 
 PptxGenJS API reference:
-- Text:   slide.addText("Hello", { x:1, y:1, w:8, h:1, fontSize:24, bold:true, color:"363636" })
-- Bullets: slide.addText([{text:"Point 1",options:{bullet:true}},{text:"Point 2",options:{bullet:true}}], { x:0.5, y:1.5, w:9, h:3, fontSize:18 })
+- Text:   slide.addText("Hello", { x:1, y:1, w:11.33, h:1, fontSize:24, bold:true, color:"363636" })
+- Bullets: slide.addText([{text:"Point 1",options:{bullet:true}},{text:"Point 2",options:{bullet:true}}], { x:0.5, y:1.5, w:12.33, h:3, fontSize:18 })
 - Image (base64): slide.addImage({ data:"data:image/png;base64,...", x:1, y:1, w:4, h:3 })
-- Table:  slide.addTable([["H1","H2"],["R1","R2"]], { x:0.5, y:2, w:9, fontSize:14 })
+- Table:  slide.addTable([["H1","H2"],["R1","R2"]], { x:0.5, y:2, w:12.33, fontSize:14 })
 - Shape:  slide.addShape("rect", { x:1, y:1, w:3, h:1, fill:{ color:"FF0000" } })
 - All positions (x, y, w, h) are in inches.`,
   parameters: {
@@ -431,7 +447,25 @@ PptxGenJS API reference:
       replaceSlideIndex?: number;
     };
 
+    // Read actual presentation slide size to match PptxGenJS output
+    let slideWidthInches = 10;
+    let slideHeightInches = 7.5;
+    try {
+      await PowerPoint.run(async context => {
+        const pageSetup = context.presentation.pageSetup;
+        pageSetup.load('slideWidth,slideHeight');
+        await context.sync();
+        // pageSetup returns points (1 pt = 1/72 inch)
+        slideWidthInches = Math.round((pageSetup.slideWidth / 72) * 100) / 100;
+        slideHeightInches = Math.round((pageSetup.slideHeight / 72) * 100) / 100;
+      });
+    } catch {
+      // Fall back to defaults if pageSetup unavailable (older API)
+    }
+
     const pptx = new pptxgen();
+    pptx.defineLayout({ name: 'MATCH', width: slideWidthInches, height: slideHeightInches });
+    pptx.layout = 'MATCH';
     const slide = pptx.addSlide();
 
     try {

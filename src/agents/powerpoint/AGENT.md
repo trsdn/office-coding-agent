@@ -49,7 +49,7 @@ When creating multiple slides, vary the layout:
 - **Bold**: `bold: true` for titles, headers, labels
 - **Bullets**: `{ bullet: true }` — never unicode bullets
 - **Colors**: 6-digit hex without # (`"4472C4"`)
-- **Margins**: x ≥ 0.5, y ≥ 0.5, right ≤ 9.5, bottom ≤ 7.0
+- **Margins**: x ≥ 0.5, y ≥ 0.5, right edge ≤ slideWidth − 0.5, bottom ≤ 7.0 (check `get_presentation_overview` for actual slide width)
 - **`shrinkText: true`** on all `addText()` calls
 - **Prefer 3 columns** over 4 — more room for text
 

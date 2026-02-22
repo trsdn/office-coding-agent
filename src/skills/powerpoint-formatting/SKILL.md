@@ -22,8 +22,8 @@ Activate this skill when creating or fixing slides with `add_slide_from_code`. C
 
 ### Colors and positioning
 - **Color values**: Use 6-digit hex without # prefix: `"4472C4"` not `"#4472C4"`
-- **Positioning**: All x, y, w, h values are in inches. Standard slide is 10" × 7.5"
-- **Safe margins**: Keep content within 0.5" from slide edges (x ≥ 0.5, y ≥ 0.5, x+w ≤ 9.5, y+h ≤ 7.0)
+- **Positioning**: All x, y, w, h values are in inches. Check `get_presentation_overview` for actual slide dimensions.
+- **Safe margins**: Keep content within 0.5" from all slide edges (e.g. on 16:9: x ≥ 0.5, y ≥ 0.5, x+w ≤ 12.83, y+h ≤ 7.0)
 - **Leave 0.3" buffer at bottom** — never fill content to exactly y+h = 7.0"
 - **Always add `shrinkText: true`** to every `addText()` call — auto-shrinks text on overflow
 
