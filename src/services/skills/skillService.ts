@@ -2,6 +2,7 @@ import type { AgentSkill, SkillMetadata } from '@/types/skill';
 import excelSkillRaw from '@/skills/excel/SKILL.md';
 import outlookSkillRaw from '@/skills/outlook/SKILL.md';
 import powerpointSkillRaw from '@/skills/powerpoint/SKILL.md';
+import wordSkillRaw from '@/skills/word/SKILL.md';
 
 /**
  * Parse YAML frontmatter from a skill markdown file.
@@ -122,7 +123,7 @@ function setMetadataField(metadata: SkillMetadata, key: string, value: string): 
 }
 
 function loadBundledSkills(): AgentSkill[] {
-  const bundledRawSkills = [excelSkillRaw, outlookSkillRaw, powerpointSkillRaw];
+  const bundledRawSkills = [excelSkillRaw, outlookSkillRaw, powerpointSkillRaw, wordSkillRaw];
 
   const loaded = bundledRawSkills.map(raw => {
     const parsed = parseFrontmatter(raw);

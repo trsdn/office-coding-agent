@@ -518,6 +518,468 @@ const applyStyleToSelection: Tool = {
   },
 };
 
+const insertParagraph: Tool = {
+  name: 'insert_paragraph',
+  description:
+    'Insert a paragraph at the end or beginning of the document body. Optionally apply a named style such as "Heading 1" or "Normal".',
+  parameters: {
+    type: 'object',
+    properties: {
+      text: { type: 'string', description: 'The paragraph text to insert.' },
+      location: {
+        type: 'string',
+        enum: ['End', 'Start'],
+        description: 'Where to insert the paragraph. Default: End.',
+      },
+      style: {
+        type: 'string',
+        description: 'Optional Word style name to apply (e.g. "Heading 1", "Normal", "Title").',
+      },
+    },
+    required: ['text'],
+  },
+  handler: async (args: unknown): Promise<ToolResultObject | string> => {
+    const { text, location = 'End', style } = (args ?? {}) as {
+      text: string;
+      location?: string;
+      style?: string;
+    };
+    try {
+      return await Word.run(async context => {
+        const body = context.document.body;
+        const insertLoc =
+          location === 'Start' ? Word.InsertLocation.start : Word.InsertLocation.end;
+        const paragraph = body.insertParagraph(text, insertLoc);
+        if (style) {
+          paragraph.style = style;
+        }
+        await context.sync();
+        return `Paragraph inserted at ${location}${style ? ` with style "${style}"` : ''}.`;
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { textResultForLlm: msg, resultType: 'failure', error: msg, toolTelemetry: {} };
+    }
+  },
+};
+
+const insertBreak: Tool = {
+  name: 'insert_break',
+  description:
+    'Insert a page break or section break after the current selection.',
+  parameters: {
+    type: 'object',
+    properties: {
+      breakType: {
+        type: 'string',
+        enum: ['page', 'sectionNext', 'sectionContinuous'],
+        description: 'Type of break to insert. Default: page.',
+      },
+    },
+    required: [],
+  },
+  handler: async (args: unknown): Promise<ToolResultObject | string> => {
+    const { breakType = 'page' } = (args ?? {}) as { breakType?: string };
+
+    const breakMap: Record<string, Word.BreakType> = {
+      page: Word.BreakType.page,
+      sectionNext: Word.BreakType.sectionNext,
+      sectionContinuous: Word.BreakType.sectionContinuous,
+    };
+
+    const wordBreakType = breakMap[breakType] ?? Word.BreakType.page;
+
+    try {
+      return await Word.run(async context => {
+        const selection = context.document.getSelection();
+        selection.insertBreak(wordBreakType, Word.InsertLocation.after);
+        await context.sync();
+        return `Inserted ${breakType} break after selection.`;
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { textResultForLlm: msg, resultType: 'failure', error: msg, toolTelemetry: {} };
+    }
+  },
+};
+
+const applyParagraphStyle: Tool = {
+  name: 'apply_paragraph_style',
+  description:
+    'Apply a named style (e.g. "Heading 1", "Title", "Normal", "Quote") to every paragraph in the current selection.',
+  parameters: {
+    type: 'object',
+    properties: {
+      styleName: {
+        type: 'string',
+        description: 'The Word style name to apply (e.g. "Heading 1", "Title", "Normal", "Quote").',
+      },
+    },
+    required: ['styleName'],
+  },
+  handler: async (args: unknown): Promise<ToolResultObject | string> => {
+    const { styleName } = (args ?? {}) as { styleName: string };
+    try {
+      return await Word.run(async context => {
+        const selection = context.document.getSelection();
+        const paragraphs = selection.paragraphs;
+        paragraphs.load('items');
+        await context.sync();
+
+        for (const para of paragraphs.items) {
+          para.style = styleName;
+        }
+        await context.sync();
+
+        return `Applied style "${styleName}" to ${String(paragraphs.items.length)} paragraph(s).`;
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { textResultForLlm: msg, resultType: 'failure', error: msg, toolTelemetry: {} };
+    }
+  },
+};
+
+const setParagraphFormat: Tool = {
+  name: 'set_paragraph_format',
+  description:
+    'Set paragraph formatting on the current selection. Only provided properties are changed; others are preserved.',
+  parameters: {
+    type: 'object',
+    properties: {
+      alignment: {
+        type: 'string',
+        enum: ['left', 'center', 'right', 'justified'],
+        description: 'Horizontal alignment.',
+      },
+      lineSpacing: { type: 'number', description: 'Line spacing in points.' },
+      spaceBefore: { type: 'number', description: 'Space before paragraph in points.' },
+      spaceAfter: { type: 'number', description: 'Space after paragraph in points.' },
+      firstLineIndent: { type: 'number', description: 'First line indent in points.' },
+    },
+    required: [],
+  },
+  handler: async (args: unknown): Promise<ToolResultObject | string> => {
+    const { alignment, lineSpacing, spaceBefore, spaceAfter, firstLineIndent } = (args ?? {}) as {
+      alignment?: string;
+      lineSpacing?: number;
+      spaceBefore?: number;
+      spaceAfter?: number;
+      firstLineIndent?: number;
+    };
+
+    const alignmentMap: Record<string, Word.Alignment> = {
+      left: Word.Alignment.left,
+      center: Word.Alignment.centered,
+      right: Word.Alignment.right,
+      justified: Word.Alignment.justified,
+    };
+
+    try {
+      return await Word.run(async context => {
+        const selection = context.document.getSelection();
+        const paragraphs = selection.paragraphs;
+        paragraphs.load('items');
+        await context.sync();
+
+        for (const para of paragraphs.items) {
+          if (alignment !== undefined && alignmentMap[alignment] !== undefined) {
+            para.alignment = alignmentMap[alignment];
+          }
+          if (lineSpacing !== undefined) para.lineSpacing = lineSpacing;
+          if (spaceBefore !== undefined) para.spaceBefore = spaceBefore;
+          if (spaceAfter !== undefined) para.spaceAfter = spaceAfter;
+          if (firstLineIndent !== undefined) para.firstLineIndent = firstLineIndent;
+        }
+        await context.sync();
+
+        const applied: string[] = [];
+        if (alignment !== undefined) applied.push(`alignment=${alignment}`);
+        if (lineSpacing !== undefined) applied.push(`lineSpacing=${String(lineSpacing)}`);
+        if (spaceBefore !== undefined) applied.push(`spaceBefore=${String(spaceBefore)}`);
+        if (spaceAfter !== undefined) applied.push(`spaceAfter=${String(spaceAfter)}`);
+        if (firstLineIndent !== undefined)
+          applied.push(`firstLineIndent=${String(firstLineIndent)}`);
+
+        return applied.length > 0
+          ? `Applied to ${String(paragraphs.items.length)} paragraph(s): ${applied.join(', ')}.`
+          : 'No formatting properties specified.';
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { textResultForLlm: msg, resultType: 'failure', error: msg, toolTelemetry: {} };
+    }
+  },
+};
+
+const getDocumentProperties: Tool = {
+  name: 'get_document_properties',
+  description:
+    'Get document metadata including author, title, subject, keywords, creation date, last modified time, and revision number.',
+  parameters: { type: 'object', properties: {}, required: [] },
+  handler: async (): Promise<ToolResultObject | string> => {
+    try {
+      return await Word.run(async context => {
+        const props = context.document.properties;
+        props.load([
+          'author',
+          'title',
+          'subject',
+          'keywords',
+          'creationDate',
+          'lastSaveTime',
+          'lastAuthor',
+          'revisionNumber',
+          'category',
+          'comments',
+          'company',
+        ]);
+
+        const body = context.document.body;
+        const paragraphs = body.paragraphs;
+        paragraphs.load('items');
+        await context.sync();
+
+        const lines = [
+          'Document Properties',
+          '='.repeat(40),
+          `Title: ${props.title || '(none)'}`,
+          `Author: ${props.author || '(none)'}`,
+          `Last Author: ${props.lastAuthor || '(none)'}`,
+          `Subject: ${props.subject || '(none)'}`,
+          `Keywords: ${props.keywords || '(none)'}`,
+          `Category: ${props.category || '(none)'}`,
+          `Company: ${props.company || '(none)'}`,
+          `Comments: ${props.comments || '(none)'}`,
+          `Creation Date: ${String(props.creationDate)}`,
+          `Last Save Time: ${String(props.lastSaveTime)}`,
+          `Revision Number: ${props.revisionNumber || '(none)'}`,
+          `Paragraph Count: ${String(paragraphs.items.length)}`,
+        ];
+
+        return lines.join('\n');
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { textResultForLlm: msg, resultType: 'failure', error: msg, toolTelemetry: {} };
+    }
+  },
+};
+
+const insertImage: Tool = {
+  name: 'insert_image',
+  description:
+    'Insert a base64-encoded image at the current selection. Optionally set width and height in points.',
+  parameters: {
+    type: 'object',
+    properties: {
+      base64Image: {
+        type: 'string',
+        description: 'Base64-encoded image data (without data URI prefix).',
+      },
+      width: { type: 'number', description: 'Image width in points.' },
+      height: { type: 'number', description: 'Image height in points.' },
+    },
+    required: ['base64Image'],
+  },
+  handler: async (args: unknown): Promise<ToolResultObject | string> => {
+    const { base64Image, width, height } = (args ?? {}) as {
+      base64Image: string;
+      width?: number;
+      height?: number;
+    };
+    try {
+      return await Word.run(async context => {
+        const selection = context.document.getSelection();
+        const picture = selection.insertInlinePictureFromBase64(
+          base64Image,
+          Word.InsertLocation.replace
+        );
+        if (width !== undefined) picture.width = width;
+        if (height !== undefined) picture.height = height;
+        await context.sync();
+        return `Image inserted${width ? ` (width=${String(width)})` : ''}${height ? ` (height=${String(height)})` : ''}.`;
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { textResultForLlm: msg, resultType: 'failure', error: msg, toolTelemetry: {} };
+    }
+  },
+};
+
+const getComments: Tool = {
+  name: 'get_comments',
+  description:
+    'Get all comments from the document body, including author, content, creation date, and resolved status.',
+  parameters: { type: 'object', properties: {}, required: [] },
+  handler: async (): Promise<ToolResultObject | string> => {
+    try {
+      return await Word.run(async context => {
+        const comments = context.document.body.getComments();
+        comments.load('items');
+        await context.sync();
+
+        if (comments.items.length === 0) {
+          return '(no comments found)';
+        }
+
+        for (const comment of comments.items) {
+          comment.load(['authorName', 'authorEmail', 'content', 'creationDate', 'resolved', 'id']);
+        }
+        await context.sync();
+
+        const lines = comments.items.map(
+          (c, i) =>
+            `${String(i + 1)}. [${c.resolved ? 'Resolved' : 'Open'}] ${c.authorName} (${c.authorEmail}): "${c.content}" — ${String(c.creationDate)}`
+        );
+
+        return `Comments (${String(comments.items.length)}):\n${lines.join('\n')}`;
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { textResultForLlm: msg, resultType: 'failure', error: msg, toolTelemetry: {} };
+    }
+  },
+};
+
+const insertList: Tool = {
+  name: 'insert_list',
+  description:
+    'Insert a bulleted or numbered list at the current selection using HTML. Provide the list items as a newline-separated string.',
+  parameters: {
+    type: 'object',
+    properties: {
+      text: {
+        type: 'string',
+        description: 'List items separated by newlines. Each line becomes a list item.',
+      },
+      listType: {
+        type: 'string',
+        enum: ['bullet', 'number'],
+        description: 'Type of list to insert. Default: bullet.',
+      },
+    },
+    required: ['text'],
+  },
+  handler: async (args: unknown): Promise<ToolResultObject | string> => {
+    const { text, listType = 'bullet' } = (args ?? {}) as {
+      text: string;
+      listType?: string;
+    };
+    try {
+      return await Word.run(async context => {
+        const items = text
+          .split('\n')
+          .map(line => line.trim())
+          .filter(Boolean);
+        const tag = listType === 'number' ? 'ol' : 'ul';
+        const html = `<${tag}>${items.map(item => `<li>${item}</li>`).join('')}</${tag}>`;
+
+        const selection = context.document.getSelection();
+        selection.insertHtml(html, Word.InsertLocation.replace);
+        await context.sync();
+
+        return `Inserted ${listType === 'number' ? 'numbered' : 'bulleted'} list with ${String(items.length)} item(s).`;
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { textResultForLlm: msg, resultType: 'failure', error: msg, toolTelemetry: {} };
+    }
+  },
+};
+
+const getContentControls: Tool = {
+  name: 'get_content_controls',
+  description:
+    'List all content controls in the document, including their tag, title, text, and type.',
+  parameters: { type: 'object', properties: {}, required: [] },
+  handler: async (): Promise<ToolResultObject | string> => {
+    try {
+      return await Word.run(async context => {
+        const controls = context.document.contentControls;
+        controls.load('items');
+        await context.sync();
+
+        if (controls.items.length === 0) {
+          return '(no content controls found)';
+        }
+
+        for (const cc of controls.items) {
+          cc.load(['tag', 'title', 'text', 'type']);
+        }
+        await context.sync();
+
+        const lines = controls.items.map(
+          (cc, i) =>
+            `${String(i + 1)}. [${String(cc.type)}] tag="${cc.tag}" title="${cc.title}" text="${cc.text.length > 100 ? cc.text.slice(0, 100) + '…' : cc.text}"`
+        );
+
+        return `Content Controls (${String(controls.items.length)}):\n${lines.join('\n')}`;
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { textResultForLlm: msg, resultType: 'failure', error: msg, toolTelemetry: {} };
+    }
+  },
+};
+
+const insertTextAtBookmark: Tool = {
+  name: 'insert_text_at_bookmark',
+  description:
+    'Insert text at a named bookmark location in the document. Can replace the bookmark content, or insert before or after it.',
+  parameters: {
+    type: 'object',
+    properties: {
+      bookmarkName: {
+        type: 'string',
+        description: 'The name of the bookmark (case-insensitive).',
+      },
+      text: { type: 'string', description: 'Text to insert.' },
+      insertLocation: {
+        type: 'string',
+        enum: ['Before', 'After', 'Replace'],
+        description: 'Where to insert relative to the bookmark. Default: Replace.',
+      },
+    },
+    required: ['bookmarkName', 'text'],
+  },
+  handler: async (args: unknown): Promise<ToolResultObject | string> => {
+    const { bookmarkName, text, insertLocation = 'Replace' } = (args ?? {}) as {
+      bookmarkName: string;
+      text: string;
+      insertLocation?: string;
+    };
+
+    const locationMap: Record<string, Word.InsertLocation> = {
+      Before: Word.InsertLocation.before,
+      After: Word.InsertLocation.after,
+      Replace: Word.InsertLocation.replace,
+    };
+
+    const loc = locationMap[insertLocation] ?? Word.InsertLocation.replace;
+
+    try {
+      return await Word.run(async context => {
+        const range = context.document.getBookmarkRangeOrNullObject(bookmarkName);
+        range.load('isNullObject');
+        await context.sync();
+
+        if (range.isNullObject) {
+          return `Bookmark "${bookmarkName}" not found.`;
+        }
+
+        range.insertText(text, loc);
+        await context.sync();
+
+        return `Text inserted at bookmark "${bookmarkName}" (location: ${insertLocation}).`;
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { textResultForLlm: msg, resultType: 'failure', error: msg, toolTelemetry: {} };
+    }
+  },
+};
+
 export const wordTools: Tool[] = [
   getDocumentOverview,
   getDocumentContent,
@@ -529,4 +991,14 @@ export const wordTools: Tool[] = [
   findAndReplace,
   insertTable,
   applyStyleToSelection,
+  insertParagraph,
+  insertBreak,
+  applyParagraphStyle,
+  setParagraphFormat,
+  getDocumentProperties,
+  insertImage,
+  getComments,
+  insertList,
+  getContentControls,
+  insertTextAtBookmark,
 ];
