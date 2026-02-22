@@ -59,11 +59,30 @@ Use this as the default orchestration skill for PowerPoint tasks.
 - **`set_presentation_content`**: Quick text box addition. No formatting control. Good for simple annotations.
 - **`add_slide_from_code`**: Full PptxGenJS power — text with fonts/colors/sizes, bullet lists, tables, shapes, images. Use this for any slide that needs to look professional.
 
+## Iterative Refinement Workflow
+
+Never treat a slide as done after a single pass. Always:
+
+1. Create/modify the slide
+2. Verify with `get_slide_image` or `get_presentation_content`
+3. Evaluate: layout, readability, completeness, consistency
+4. Refine with `add_slide_from_code` + `replaceSlideIndex` if needed
+5. Repeat until polished
+
+### Redesign a slide (iterative)
+1. `get_slide_image` → see current design
+2. `get_presentation_content` → read text
+3. `add_slide_from_code` with `replaceSlideIndex` → first draft
+4. `get_slide_image` → check result
+5. `add_slide_from_code` with `replaceSlideIndex` → refine layout/spacing/colors
+6. `get_slide_image` → confirm final result
+
 ## Always-On Defaults
 
 - Always discover the presentation structure before any modification.
 - Prefer `add_slide_from_code` over `set_presentation_content` for user-facing content.
 - Use 0-based slide indices consistently.
+- Always verify changes with `get_slide_image` after mutations.
 - Always finish with a clear summary of actions taken.
 
 ## Multi-Step Requests
