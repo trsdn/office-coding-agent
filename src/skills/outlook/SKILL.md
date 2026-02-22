@@ -47,6 +47,7 @@ Use this as the default orchestration skill for Outlook tasks.
 | Compose new email           | `display_new_message`                           |
 | Create appointment          | `display_new_appointment`                       |
 | Get user info               | `get_user_profile`                              |
+| Get calendar appointments   | `get_appointments`                              |
 | Get host diagnostics        | `get_diagnostics`                               |
 
 ## Common Workflows
