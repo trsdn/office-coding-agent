@@ -19,28 +19,43 @@ Use this as the default orchestration skill for Word document tasks.
 
 ## High-Level Tool Guidance
 
-| Task                            | Primary Tool                  |
-| ------------------------------- | ----------------------------- |
-| Understand document structure   | `get_document_overview`       |
-| Read full document as HTML      | `get_document_content`        |
-| Read a specific section         | `get_document_section`        |
-| Get selected text (plain)       | `get_selection_text`          |
-| Get selected content (OOXML)    | `get_selection`               |
-| Replace entire document         | `set_document_content`        |
-| Insert HTML at selection        | `insert_content_at_selection` |
-| Insert a paragraph              | `insert_paragraph`            |
-| Insert a page/section break     | `insert_break`                |
-| Find and replace text           | `find_and_replace`            |
-| Insert a table                  | `insert_table`                |
-| Insert a bulleted/numbered list | `insert_list`                 |
-| Insert an image                 | `insert_image`                |
-| Apply font styling to selection | `apply_style_to_selection`    |
-| Apply named paragraph style     | `apply_paragraph_style`       |
-| Set paragraph formatting        | `set_paragraph_format`        |
-| Get document metadata           | `get_document_properties`     |
-| Get comments                    | `get_comments`                |
-| List content controls           | `get_content_controls`        |
-| Insert text at bookmark         | `insert_text_at_bookmark`     |
+| Task                              | Primary Tool                  |
+| --------------------------------- | ----------------------------- |
+| Understand document structure     | `get_document_overview`       |
+| Read full document as HTML        | `get_document_content`        |
+| Read a specific section           | `get_document_section`        |
+| Get selected text (plain)         | `get_selection_text`          |
+| Get selected content (OOXML)      | `get_selection`               |
+| Replace entire document           | `set_document_content`        |
+| Insert HTML at selection          | `insert_content_at_selection` |
+| Insert a paragraph                | `insert_paragraph`            |
+| Insert a page/section break       | `insert_break`                |
+| Find and replace text             | `find_and_replace`            |
+| Insert a table                    | `insert_table`                |
+| Insert a bulleted/numbered list   | `insert_list`                 |
+| Insert an image                   | `insert_image`                |
+| Apply font styling to selection   | `apply_style_to_selection`    |
+| Apply named paragraph style       | `apply_paragraph_style`       |
+| Set paragraph formatting          | `set_paragraph_format`        |
+| Get document metadata             | `get_document_properties`     |
+| Get comments                      | `get_comments`                |
+| List content controls             | `get_content_controls`        |
+| Insert text at bookmark           | `insert_text_at_bookmark`     |
+| Read headers and footers          | `get_headers_footers`         |
+| Set header or footer content      | `set_header_footer`           |
+| Read table contents by index      | `get_table_data`              |
+| Add rows to existing table        | `add_table_rows`              |
+| Add columns to existing table     | `add_table_columns`           |
+| Delete a table row                | `delete_table_row`            |
+| Set table cell value/formatting   | `set_table_cell_value`        |
+| Insert a hyperlink                | `insert_hyperlink`            |
+| Insert a footnote                 | `insert_footnote`             |
+| Insert an endnote                 | `insert_endnote`              |
+| Get footnotes and endnotes        | `get_footnotes_endnotes`      |
+| Delete selected content           | `delete_content`              |
+| Wrap selection in content control | `insert_content_control`      |
+| Search text and apply formatting  | `format_found_text`           |
+| List document sections            | `get_sections`                |
 
 ## Choosing Between Tools
 
@@ -51,6 +66,16 @@ Use this as the default orchestration skill for Word document tasks.
 - **`apply_paragraph_style`** applies a named Word style (e.g. "Heading 1") to paragraphs. Use for structural formatting.
 - **`set_paragraph_format`** sets paragraph-level properties (alignment, spacing, indent). Use for layout adjustments.
 - **`insert_list`** is the easiest way to create bullet or numbered lists via HTML insertion.
+- **`get_table_data`** reads an existing table's contents. Use before modifying table structure.
+- **`add_table_rows`** / **`add_table_columns`** — add rows or columns to an existing table. Reference by `tableIndex` (0-based).
+- **`delete_table_row`** — remove a specific row from a table.
+- **`set_table_cell_value`** — update a single cell's text and optionally set shading/bold.
+- **`insert_hyperlink`** — inserts a clickable link at the selection via HTML.
+- **`insert_footnote`** / **`insert_endnote`** — insert notes at the selection (requires WordApi 1.5).
+- **`format_found_text`** — search for text and apply font formatting (bold, color, etc.) to all matches.
+- **`get_headers_footers`** / **`set_header_footer`** — read/write section headers and footers.
+- **`insert_content_control`** — wrap the selection in a content control (useful for template fields).
+- **`delete_content`** — delete the currently selected content.
 
 ## Iterative Refinement Workflow
 
@@ -88,6 +113,27 @@ Never treat a document change as done after a single pass. Always:
 ### Create a table from data
 1. `insert_table` with data array → insert structured table
 2. `get_document_content` → verify table appears correctly
+
+### Modify an existing table
+1. `get_document_overview` → find how many tables exist
+2. `get_table_data` with `tableIndex` → read current contents
+3. `add_table_rows` / `add_table_columns` / `delete_table_row` / `set_table_cell_value` → modify
+4. `get_table_data` → verify result
+
+### Add header and footer
+1. `get_sections` → see how many sections exist
+2. `set_header_footer` with sectionIndex=0, type="header" → set header HTML
+3. `set_header_footer` with sectionIndex=0, type="footer" → set footer HTML
+4. `get_headers_footers` → verify
+
+### Highlight specific text throughout document
+1. `format_found_text` with searchText + desired formatting (bold, color, highlight)
+2. `get_document_content` → verify
+
+### Add footnotes/endnotes
+1. User selects text in document
+2. `insert_footnote` or `insert_endnote` with reference text
+3. `get_footnotes_endnotes` → verify
 
 ## Always-On Defaults
 

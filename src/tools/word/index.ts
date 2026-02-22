@@ -980,6 +980,675 @@ const insertTextAtBookmark: Tool = {
   },
 };
 
+const getHeadersFooters: Tool = {
+  name: 'get_headers_footers',
+  description:
+    'Read headers and footers from all sections of the Word document. Returns section-by-section listing of primary header and footer text.',
+  parameters: { type: 'object', properties: {}, required: [] },
+  handler: async (): Promise<ToolResultObject | string> => {
+    try {
+      return await Word.run(async context => {
+        const sections = context.document.sections;
+        sections.load('items');
+        await context.sync();
+
+        const results: string[] = ['Headers & Footers', '='.repeat(40)];
+
+        for (let i = 0; i < sections.items.length; i++) {
+          const section = sections.items[i];
+          const header = section.getHeader('Primary');
+          const footer = section.getFooter('Primary');
+          header.load('text');
+          footer.load('text');
+          await context.sync();
+
+          results.push(
+            `\nSection ${String(i + 1)}:`,
+            `  Header: ${header.text.trim() || '(empty)'}`,
+            `  Footer: ${footer.text.trim() || '(empty)'}`
+          );
+        }
+
+        return results.join('\n');
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { textResultForLlm: msg, resultType: 'failure', error: msg, toolTelemetry: {} };
+    }
+  },
+};
+
+const setHeaderFooter: Tool = {
+  name: 'set_header_footer',
+  description:
+    'Set header or footer HTML content for a specific section of the Word document.',
+  parameters: {
+    type: 'object',
+    properties: {
+      sectionIndex: { type: 'number', description: '0-based section index.' },
+      type: {
+        type: 'string',
+        enum: ['header', 'footer'],
+        description: 'Whether to set the header or footer.',
+      },
+      headerFooterType: {
+        type: 'string',
+        enum: ['Primary', 'FirstPage', 'EvenPages'],
+        description: 'Header/footer type. Default: Primary.',
+      },
+      html: { type: 'string', description: 'HTML content to set.' },
+    },
+    required: ['sectionIndex', 'type', 'html'],
+  },
+  handler: async (args: unknown): Promise<ToolResultObject | string> => {
+    const { sectionIndex, type, headerFooterType = 'Primary', html } = (args ?? {}) as {
+      sectionIndex: number;
+      type: 'header' | 'footer';
+      headerFooterType?: string;
+      html: string;
+    };
+    try {
+      return await Word.run(async context => {
+        const sections = context.document.sections;
+        sections.load('items');
+        await context.sync();
+
+        if (sectionIndex < 0 || sectionIndex >= sections.items.length) {
+          return `Section index ${String(sectionIndex)} is out of range (0–${String(sections.items.length - 1)}).`;
+        }
+
+        const section = sections.items[sectionIndex];
+        const hfType = headerFooterType as 'Primary' | 'FirstPage' | 'EvenPages';
+        const target = type === 'header' ? section.getHeader(hfType) : section.getFooter(hfType);
+        target.clear();
+        target.insertHtml(html, Word.InsertLocation.start);
+        await context.sync();
+
+        return `Set ${type} (${hfType}) for section ${String(sectionIndex + 1)}.`;
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { textResultForLlm: msg, resultType: 'failure', error: msg, toolTelemetry: {} };
+    }
+  },
+};
+
+const getTableData: Tool = {
+  name: 'get_table_data',
+  description:
+    'Read the contents of a table by index. Returns the table data as a formatted text grid.',
+  parameters: {
+    type: 'object',
+    properties: {
+      tableIndex: { type: 'number', description: '0-based table index.' },
+    },
+    required: ['tableIndex'],
+  },
+  handler: async (args: unknown): Promise<ToolResultObject | string> => {
+    const { tableIndex } = (args ?? {}) as { tableIndex: number };
+    try {
+      return await Word.run(async context => {
+        const tables = context.document.body.tables;
+        tables.load('items');
+        await context.sync();
+
+        if (tableIndex < 0 || tableIndex >= tables.items.length) {
+          return `Table index ${String(tableIndex)} is out of range (0–${String(tables.items.length - 1)}).`;
+        }
+
+        const table = tables.items[tableIndex];
+        table.load('rows');
+        await context.sync();
+
+        const rows: string[][] = [];
+        for (const row of table.rows.items) {
+          row.load('cells');
+          await context.sync();
+          const cells: string[] = [];
+          for (const cell of row.cells.items) {
+            cell.load('value');
+            cell.body.load('text');
+          }
+          await context.sync();
+          for (const cell of row.cells.items) {
+            cells.push(cell.body.text.trim());
+          }
+          rows.push(cells);
+        }
+
+        const lines = rows.map((r, i) => `Row ${String(i)}: ${r.join(' | ')}`);
+        return `Table ${String(tableIndex)} (${String(rows.length)} rows):\n${lines.join('\n')}`;
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { textResultForLlm: msg, resultType: 'failure', error: msg, toolTelemetry: {} };
+    }
+  },
+};
+
+const addTableRows: Tool = {
+  name: 'add_table_rows',
+  description: 'Add rows to an existing table in the Word document.',
+  parameters: {
+    type: 'object',
+    properties: {
+      tableIndex: { type: 'number', description: '0-based table index.' },
+      rowCount: { type: 'number', description: 'Number of rows to add.' },
+      insertLocation: {
+        type: 'string',
+        enum: ['Start', 'End'],
+        description: 'Where to add rows. Default: End.',
+      },
+      values: {
+        type: 'array',
+        items: { type: 'array', items: { type: 'string' } },
+        description: 'Optional 2D array of cell values for the new rows.',
+      },
+    },
+    required: ['tableIndex', 'rowCount'],
+  },
+  handler: async (args: unknown): Promise<ToolResultObject | string> => {
+    const { tableIndex, rowCount, insertLocation = 'End', values } = (args ?? {}) as {
+      tableIndex: number;
+      rowCount: number;
+      insertLocation?: string;
+      values?: string[][];
+    };
+    try {
+      return await Word.run(async context => {
+        const tables = context.document.body.tables;
+        tables.load('items');
+        await context.sync();
+
+        if (tableIndex < 0 || tableIndex >= tables.items.length) {
+          return `Table index ${String(tableIndex)} is out of range (0–${String(tables.items.length - 1)}).`;
+        }
+
+        const table = tables.items[tableIndex];
+        const loc = insertLocation === 'Start' ? Word.InsertLocation.start : Word.InsertLocation.end;
+        table.addRows(loc, rowCount, values);
+        await context.sync();
+
+        return `Added ${String(rowCount)} row(s) at ${insertLocation} of table ${String(tableIndex)}.`;
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { textResultForLlm: msg, resultType: 'failure', error: msg, toolTelemetry: {} };
+    }
+  },
+};
+
+const addTableColumns: Tool = {
+  name: 'add_table_columns',
+  description: 'Add columns to an existing table in the Word document.',
+  parameters: {
+    type: 'object',
+    properties: {
+      tableIndex: { type: 'number', description: '0-based table index.' },
+      columnCount: { type: 'number', description: 'Number of columns to add.' },
+      insertLocation: {
+        type: 'string',
+        enum: ['Start', 'End'],
+        description: 'Where to add columns. Default: End.',
+      },
+      values: {
+        type: 'array',
+        items: { type: 'array', items: { type: 'string' } },
+        description: 'Optional 2D array of cell values for the new columns.',
+      },
+    },
+    required: ['tableIndex', 'columnCount'],
+  },
+  handler: async (args: unknown): Promise<ToolResultObject | string> => {
+    const { tableIndex, columnCount, insertLocation = 'End', values } = (args ?? {}) as {
+      tableIndex: number;
+      columnCount: number;
+      insertLocation?: string;
+      values?: string[][];
+    };
+    try {
+      return await Word.run(async context => {
+        const tables = context.document.body.tables;
+        tables.load('items');
+        await context.sync();
+
+        if (tableIndex < 0 || tableIndex >= tables.items.length) {
+          return `Table index ${String(tableIndex)} is out of range (0–${String(tables.items.length - 1)}).`;
+        }
+
+        const table = tables.items[tableIndex];
+        const loc = insertLocation === 'Start' ? Word.InsertLocation.start : Word.InsertLocation.end;
+        table.addColumns(loc, columnCount, values);
+        await context.sync();
+
+        return `Added ${String(columnCount)} column(s) at ${insertLocation} of table ${String(tableIndex)}.`;
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { textResultForLlm: msg, resultType: 'failure', error: msg, toolTelemetry: {} };
+    }
+  },
+};
+
+const deleteTableRow: Tool = {
+  name: 'delete_table_row',
+  description: 'Delete a row from a table in the Word document.',
+  parameters: {
+    type: 'object',
+    properties: {
+      tableIndex: { type: 'number', description: '0-based table index.' },
+      rowIndex: { type: 'number', description: '0-based row index to delete.' },
+    },
+    required: ['tableIndex', 'rowIndex'],
+  },
+  handler: async (args: unknown): Promise<ToolResultObject | string> => {
+    const { tableIndex, rowIndex } = (args ?? {}) as { tableIndex: number; rowIndex: number };
+    try {
+      return await Word.run(async context => {
+        const tables = context.document.body.tables;
+        tables.load('items');
+        await context.sync();
+
+        if (tableIndex < 0 || tableIndex >= tables.items.length) {
+          return `Table index ${String(tableIndex)} is out of range (0–${String(tables.items.length - 1)}).`;
+        }
+
+        const table = tables.items[tableIndex];
+        table.load('rows');
+        await context.sync();
+
+        if (rowIndex < 0 || rowIndex >= table.rows.items.length) {
+          return `Row index ${String(rowIndex)} is out of range (0–${String(table.rows.items.length - 1)}).`;
+        }
+
+        table.rows.items[rowIndex].delete();
+        await context.sync();
+
+        return `Deleted row ${String(rowIndex)} from table ${String(tableIndex)}.`;
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { textResultForLlm: msg, resultType: 'failure', error: msg, toolTelemetry: {} };
+    }
+  },
+};
+
+const setTableCellValue: Tool = {
+  name: 'set_table_cell_value',
+  description:
+    'Set the value and optional formatting for a specific cell in a table.',
+  parameters: {
+    type: 'object',
+    properties: {
+      tableIndex: { type: 'number', description: '0-based table index.' },
+      rowIndex: { type: 'number', description: '0-based row index.' },
+      cellIndex: { type: 'number', description: '0-based cell (column) index.' },
+      text: { type: 'string', description: 'Text to set in the cell.' },
+      shadingColor: { type: 'string', description: 'Optional cell background color as hex (e.g. "#FF0000").' },
+      bold: { type: 'boolean', description: 'Optional: make cell text bold.' },
+    },
+    required: ['tableIndex', 'rowIndex', 'cellIndex', 'text'],
+  },
+  handler: async (args: unknown): Promise<ToolResultObject | string> => {
+    const { tableIndex, rowIndex, cellIndex, text, shadingColor, bold } = (args ?? {}) as {
+      tableIndex: number;
+      rowIndex: number;
+      cellIndex: number;
+      text: string;
+      shadingColor?: string;
+      bold?: boolean;
+    };
+    try {
+      return await Word.run(async context => {
+        const tables = context.document.body.tables;
+        tables.load('items');
+        await context.sync();
+
+        if (tableIndex < 0 || tableIndex >= tables.items.length) {
+          return `Table index ${String(tableIndex)} is out of range (0–${String(tables.items.length - 1)}).`;
+        }
+
+        const table = tables.items[tableIndex];
+        const cell = table.getCell(rowIndex, cellIndex);
+        const paras = cell.body.paragraphs;
+        paras.load('items');
+        await context.sync();
+
+        if (paras.items.length > 0) {
+          paras.items[0].insertText(text, Word.InsertLocation.replace);
+          if (bold !== undefined) paras.items[0].font.bold = bold;
+        }
+        if (shadingColor !== undefined) cell.shadingColor = shadingColor;
+        await context.sync();
+
+        return `Set cell (${String(rowIndex)}, ${String(cellIndex)}) in table ${String(tableIndex)} to "${text}".`;
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { textResultForLlm: msg, resultType: 'failure', error: msg, toolTelemetry: {} };
+    }
+  },
+};
+
+const insertHyperlink: Tool = {
+  name: 'insert_hyperlink',
+  description:
+    'Insert a hyperlink at the current selection in the Word document.',
+  parameters: {
+    type: 'object',
+    properties: {
+      url: { type: 'string', description: 'The URL for the hyperlink.' },
+      displayText: { type: 'string', description: 'Optional display text. Defaults to the URL.' },
+    },
+    required: ['url'],
+  },
+  handler: async (args: unknown): Promise<ToolResultObject | string> => {
+    const { url, displayText } = (args ?? {}) as { url: string; displayText?: string };
+    try {
+      return await Word.run(async context => {
+        const selection = context.document.getSelection();
+        const linkText = displayText ?? url;
+        const html = `<a href="${url}">${linkText}</a>`;
+        selection.insertHtml(html, Word.InsertLocation.replace);
+        await context.sync();
+        return `Hyperlink inserted: "${linkText}" → ${url}`;
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { textResultForLlm: msg, resultType: 'failure', error: msg, toolTelemetry: {} };
+    }
+  },
+};
+
+const insertFootnote: Tool = {
+  name: 'insert_footnote',
+  description:
+    'Insert a footnote at the current selection. Requires WordApi 1.5; returns an error message if not supported.',
+  parameters: {
+    type: 'object',
+    properties: {
+      text: { type: 'string', description: 'Footnote text.' },
+    },
+    required: ['text'],
+  },
+  handler: async (args: unknown): Promise<ToolResultObject | string> => {
+    const { text } = (args ?? {}) as { text: string };
+    try {
+      return await Word.run(async context => {
+        const selection = context.document.getSelection();
+        const footnote = selection.insertFootnote(text);
+        footnote.load('id');
+        await context.sync();
+        return `Footnote inserted: "${text}"`;
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { textResultForLlm: msg, resultType: 'failure', error: msg, toolTelemetry: {} };
+    }
+  },
+};
+
+const insertEndnote: Tool = {
+  name: 'insert_endnote',
+  description:
+    'Insert an endnote at the current selection. Requires WordApi 1.5; returns an error message if not supported.',
+  parameters: {
+    type: 'object',
+    properties: {
+      text: { type: 'string', description: 'Endnote text.' },
+    },
+    required: ['text'],
+  },
+  handler: async (args: unknown): Promise<ToolResultObject | string> => {
+    const { text } = (args ?? {}) as { text: string };
+    try {
+      return await Word.run(async context => {
+        const selection = context.document.getSelection();
+        const endnote = selection.insertEndnote(text);
+        endnote.load('id');
+        await context.sync();
+        return `Endnote inserted: "${text}"`;
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { textResultForLlm: msg, resultType: 'failure', error: msg, toolTelemetry: {} };
+    }
+  },
+};
+
+const getFootnotesEndnotes: Tool = {
+  name: 'get_footnotes_endnotes',
+  description:
+    'Get all footnotes and endnotes from the document body. Requires WordApi 1.5; returns an error message if not supported.',
+  parameters: { type: 'object', properties: {}, required: [] },
+  handler: async (): Promise<ToolResultObject | string> => {
+    try {
+      return await Word.run(async context => {
+        const body = context.document.body;
+        const footnotes = body.footnotes;
+        const endnotes = body.endnotes;
+        footnotes.load('items');
+        endnotes.load('items');
+        await context.sync();
+
+        const lines: string[] = ['Footnotes & Endnotes', '='.repeat(40)];
+
+        if (footnotes.items.length > 0) {
+          lines.push(`\nFootnotes (${String(footnotes.items.length)}):`);
+          for (const fn of footnotes.items) {
+            fn.body.load('text');
+          }
+          await context.sync();
+          for (let i = 0; i < footnotes.items.length; i++) {
+            lines.push(`  ${String(i + 1)}. ${footnotes.items[i].body.text.trim()}`);
+          }
+        } else {
+          lines.push('\nFootnotes: (none)');
+        }
+
+        if (endnotes.items.length > 0) {
+          lines.push(`\nEndnotes (${String(endnotes.items.length)}):`);
+          for (const en of endnotes.items) {
+            en.body.load('text');
+          }
+          await context.sync();
+          for (let i = 0; i < endnotes.items.length; i++) {
+            lines.push(`  ${String(i + 1)}. ${endnotes.items[i].body.text.trim()}`);
+          }
+        } else {
+          lines.push('\nEndnotes: (none)');
+        }
+
+        return lines.join('\n');
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { textResultForLlm: msg, resultType: 'failure', error: msg, toolTelemetry: {} };
+    }
+  },
+};
+
+const deleteContent: Tool = {
+  name: 'delete_content',
+  description: 'Delete the currently selected content in the Word document.',
+  parameters: { type: 'object', properties: {}, required: [] },
+  handler: async (): Promise<ToolResultObject | string> => {
+    try {
+      return await Word.run(async context => {
+        const selection = context.document.getSelection();
+        selection.delete();
+        await context.sync();
+        return 'Selected content deleted.';
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { textResultForLlm: msg, resultType: 'failure', error: msg, toolTelemetry: {} };
+    }
+  },
+};
+
+const insertContentControl: Tool = {
+  name: 'insert_content_control',
+  description:
+    'Wrap the current selection in a content control. Optionally set a title, tag, and type.',
+  parameters: {
+    type: 'object',
+    properties: {
+      title: { type: 'string', description: 'Optional title for the content control.' },
+      tag: { type: 'string', description: 'Optional tag for the content control.' },
+      type: {
+        type: 'string',
+        enum: ['RichText', 'PlainText'],
+        description: 'Content control type. Default: RichText.',
+      },
+    },
+    required: [],
+  },
+  handler: async (args: unknown): Promise<ToolResultObject | string> => {
+    const { title, tag, type = 'RichText' } = (args ?? {}) as {
+      title?: string;
+      tag?: string;
+      type?: string;
+    };
+    try {
+      return await Word.run(async context => {
+        const selection = context.document.getSelection();
+        const ccType =
+          type === 'PlainText'
+            ? Word.ContentControlType.plainText
+            : Word.ContentControlType.richText;
+        const cc = selection.insertContentControl(ccType);
+        if (title !== undefined) cc.title = title;
+        if (tag !== undefined) cc.tag = tag;
+        await context.sync();
+
+        return `Content control inserted (type=${type}${title ? `, title="${title}"` : ''}${tag ? `, tag="${tag}"` : ''}).`;
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { textResultForLlm: msg, resultType: 'failure', error: msg, toolTelemetry: {} };
+    }
+  },
+};
+
+const formatFoundText: Tool = {
+  name: 'format_found_text',
+  description:
+    'Search for text in the document and apply font formatting to all matches.',
+  parameters: {
+    type: 'object',
+    properties: {
+      searchText: { type: 'string', description: 'Text to search for.' },
+      bold: { type: 'boolean', description: 'Make matched text bold.' },
+      italic: { type: 'boolean', description: 'Make matched text italic.' },
+      fontSize: { type: 'number', description: 'Font size in points.' },
+      fontColor: { type: 'string', description: 'Font color as hex (e.g. "#FF0000").' },
+      fontName: { type: 'string', description: 'Font family name (e.g. "Calibri").' },
+      underline: { type: 'boolean', description: 'Underline matched text.' },
+      highlightColor: {
+        type: 'string',
+        description:
+          'Highlight color. Allowed values: Yellow, Cyan, Magenta, Blue, Red, DarkBlue, DarkCyan, DarkMagenta, DarkRed, DarkYellow, DarkGray, LightGray, Black, White, None.',
+      },
+    },
+    required: ['searchText'],
+  },
+  handler: async (args: unknown): Promise<ToolResultObject | string> => {
+    const { searchText, bold, italic, fontSize, fontColor, fontName, underline, highlightColor } =
+      (args ?? {}) as {
+        searchText: string;
+        bold?: boolean;
+        italic?: boolean;
+        fontSize?: number;
+        fontColor?: string;
+        fontName?: string;
+        underline?: boolean;
+        highlightColor?: string;
+      };
+    try {
+      return await Word.run(async context => {
+        const body = context.document.body;
+        const results = body.search(searchText, { matchCase: false, matchWholeWord: false });
+        results.load('items');
+        await context.sync();
+
+        if (results.items.length === 0) {
+          return `No matches found for "${searchText}".`;
+        }
+
+        for (const result of results.items) {
+          const font = result.font;
+          if (bold !== undefined) font.bold = bold;
+          if (italic !== undefined) font.italic = italic;
+          if (fontSize !== undefined) font.size = fontSize;
+          if (fontColor !== undefined) font.color = fontColor;
+          if (fontName !== undefined) font.name = fontName;
+          if (underline !== undefined)
+            font.underline = underline ? Word.UnderlineType.single : Word.UnderlineType.none;
+          if (highlightColor !== undefined) font.highlightColor = highlightColor;
+        }
+        await context.sync();
+
+        const applied: string[] = [];
+        if (bold !== undefined) applied.push(`bold=${String(bold)}`);
+        if (italic !== undefined) applied.push(`italic=${String(italic)}`);
+        if (fontSize !== undefined) applied.push(`fontSize=${String(fontSize)}`);
+        if (fontColor !== undefined) applied.push(`color="${fontColor}"`);
+        if (fontName !== undefined) applied.push(`fontName="${fontName}"`);
+        if (underline !== undefined) applied.push(`underline=${String(underline)}`);
+        if (highlightColor !== undefined) applied.push(`highlight="${highlightColor}"`);
+
+        return `Formatted ${String(results.items.length)} match(es) of "${searchText}": ${applied.join(', ')}.`;
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { textResultForLlm: msg, resultType: 'failure', error: msg, toolTelemetry: {} };
+    }
+  },
+};
+
+const getSections: Tool = {
+  name: 'get_sections',
+  description:
+    'List all sections in the Word document with header and footer summaries.',
+  parameters: { type: 'object', properties: {}, required: [] },
+  handler: async (): Promise<ToolResultObject | string> => {
+    try {
+      return await Word.run(async context => {
+        const sections = context.document.sections;
+        sections.load('items');
+        await context.sync();
+
+        const lines: string[] = [
+          'Document Sections',
+          '='.repeat(40),
+          `Total sections: ${String(sections.items.length)}`,
+        ];
+
+        for (let i = 0; i < sections.items.length; i++) {
+          const section = sections.items[i];
+          const header = section.getHeader('Primary');
+          const footer = section.getFooter('Primary');
+          header.load('text');
+          footer.load('text');
+          await context.sync();
+
+          lines.push(
+            `\nSection ${String(i + 1)}:`,
+            `  Header: ${header.text.trim() ? header.text.trim().slice(0, 80) : '(empty)'}`,
+            `  Footer: ${footer.text.trim() ? footer.text.trim().slice(0, 80) : '(empty)'}`
+          );
+        }
+
+        return lines.join('\n');
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { textResultForLlm: msg, resultType: 'failure', error: msg, toolTelemetry: {} };
+    }
+  },
+};
+
 export const wordTools: Tool[] = [
   getDocumentOverview,
   getDocumentContent,
@@ -1001,4 +1670,19 @@ export const wordTools: Tool[] = [
   insertList,
   getContentControls,
   insertTextAtBookmark,
+  getHeadersFooters,
+  setHeaderFooter,
+  getTableData,
+  addTableRows,
+  addTableColumns,
+  deleteTableRow,
+  setTableCellValue,
+  insertHyperlink,
+  insertFootnote,
+  insertEndnote,
+  getFootnotesEndnotes,
+  deleteContent,
+  insertContentControl,
+  formatFoundText,
+  getSections,
 ];

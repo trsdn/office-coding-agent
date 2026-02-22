@@ -12,6 +12,16 @@ describe('host tool limits', () => {
     expect(Object.keys(tools).length).toBeLessThanOrEqual(MAX_TOOLS_PER_REQUEST);
   });
 
+  it('caps word tools at the provider maximum', () => {
+    const tools = getToolsForHost('word');
+    expect(Object.keys(tools).length).toBeLessThanOrEqual(MAX_TOOLS_PER_REQUEST);
+  });
+
+  it('caps powerpoint tools at the provider maximum', () => {
+    const tools = getToolsForHost('powerpoint');
+    expect(Object.keys(tools).length).toBeLessThanOrEqual(MAX_TOOLS_PER_REQUEST);
+  });
+
   it('returns empty tools for unknown host', () => {
     const tools = getToolsForHost('unknown');
     expect(Object.keys(tools)).toHaveLength(0);
