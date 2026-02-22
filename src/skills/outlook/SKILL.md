@@ -30,12 +30,24 @@ Use this as the default orchestration skill for Outlook tasks.
 | Understand current email    | `get_mail_item`                                 |
 | Read email content          | `get_mail_body`                                 |
 | Check attachments           | `get_mail_attachments`                          |
+| Read attachment content     | `get_attachment_content`                        |
+| Get email headers/IDs       | `get_mail_headers`                              |
 | Set email body (compose)    | `set_mail_body`                                 |
 | Set subject (compose)       | `set_mail_subject`                              |
 | Add recipients (compose)    | `add_mail_recipient`                            |
+| Add file attachment         | `add_file_attachment`                           |
+| Remove attachment           | `remove_attachment`                             |
 | Reply to email (read)       | `reply_to_mail`                                 |
 | Forward email (read)        | `forward_mail`                                  |
+| Save draft (compose)        | `save_draft`                                    |
+| Get/set categories          | `get_mail_categories`, `set_mail_categories`    |
+| Remove categories           | `remove_mail_categories`                        |
+| Show notification banner    | `add_notification`                              |
+| Remove notification         | `remove_notification`                           |
+| Compose new email           | `display_new_message`                           |
+| Create appointment          | `display_new_appointment`                       |
 | Get user info               | `get_user_profile`                              |
+| Get host diagnostics        | `get_diagnostics`                               |
 
 ## Common Workflows
 
