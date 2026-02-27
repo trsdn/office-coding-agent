@@ -1,15 +1,21 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { flushSync } from 'react-dom';
 import { useExternalStoreRuntime } from '@assistant-ui/react';
 import type { ThreadMessageLike, AppendMessage } from '@assistant-ui/react';
 import type { WebSocketCopilotClient, BrowserCopilotSession } from '@/lib/websocket-client';
+import type { PermissionRequestPayload } from '@/lib/websocket-client';
 import { createWebSocketClient } from '@/lib/websocket-client';
 import { getToolsForHost } from '@/tools';
-import { buildSkillContext } from '@/services/skills';
+import { getSkills, getImportedSkills, skillToMarkdown } from '@/services/skills';
 import { resolveActiveAgent } from '@/services/agents';
-import { resolveActiveMcpServers } from '@/services/mcp/mcpService';
+import { resolveActiveMcpServers, toSdkMcpServers } from '@/services/mcp';
 import { useSettingsStore } from '@/stores';
+import { useSessionHistoryStore } from '@/stores';
+import { usePermissionStore } from '@/stores';
 import { buildSystemPrompt } from '@/services/ai/systemPrompt';
+import { humanizeToolName } from '@/utils/humanizeToolName';
 import { inferProvider, WORKIQ_MCP_SERVER } from '@/types';
+import type { AgentHost } from '@/types/agent';
 import type { OfficeHostApp } from '@/services/office/host';
 import { generateId } from '@/utils/id';
 
@@ -58,8 +64,14 @@ async function loadAvailableModels(client: WebSocketCopilotClient): Promise<void
 
 function getWsUrl(): string {
   if (typeof window === 'undefined') return 'wss://localhost:3000/api/copilot';
-  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${proto}//${window.location.host}/api/copilot`;
+  const { hostname, protocol, host } = window.location;
+  // When served from GitHub Pages (staging) or any non-localhost origin,
+  // the WebSocket proxy is always on localhost:3000.
+  if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
+    return 'wss://localhost:3000/api/copilot';
+  }
+  const proto = protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${proto}//${host}/api/copilot`;
 }
 
 export function useOfficeChat(host: OfficeHostApp) {
@@ -68,19 +80,73 @@ export function useOfficeChat(host: OfficeHostApp) {
   const activeAgentId = useSettingsStore(s => s.activeAgentId);
   const importedMcpServers = useSettingsStore(s => s.importedMcpServers);
   const activeMcpServerNames = useSettingsStore(s => s.activeMcpServerNames);
+  const npmSkillPackages = useSettingsStore(s => s.npmSkillPackages);
   const workiqEnabled = useSettingsStore(s => s.workiqEnabled);
   const workiqModel = useSettingsStore(s => s.workiqModel);
+  const sessions = useSessionHistoryStore(s => s.sessions);
+  const activeSessionId = useSessionHistoryStore(s => s.activeSessionId);
+  const createSession = useSessionHistoryStore(s => s.createSession);
+  const setActiveSession = useSessionHistoryStore(s => s.setActiveSession);
+  const upsertActiveSession = useSessionHistoryStore(s => s.upsertActiveSession);
+  const deleteSessionHistoryItem = useSessionHistoryStore(s => s.deleteSession);
+  const evaluatePermission = usePermissionStore(s => s.evaluate);
+  const addPermissionRule = usePermissionStore(s => s.addRule);
+  const allowAllPermissions = usePermissionStore(s => s.allowAll);
 
   const clientRef = useRef<WebSocketCopilotClient | null>(null);
   const sessionRef = useRef<BrowserCopilotSession | null>(null);
   const cancelRef = useRef(false);
+  // Guard against concurrent/stale initSession calls (React StrictMode double-mount)
+  const initCounterRef = useRef(0);
+  const restoredInitialSessionRef = useRef(false);
 
   const [messages, setMessages] = useState<ThreadMessageLike[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [sessionError, setSessionError] = useState<Error | null>(null);
   const [isConnecting, setIsConnecting] = useState(true);
+  const [thinkingText, setThinkingText] = useState<string | null>(null);
+  const [pendingPermission, setPendingPermission] = useState<PermissionRequestPayload | null>(null);
+  const activePermissionRequestRef = useRef<string | null>(null);
+
+  const deserializeMessages = useCallback((rawMessages: unknown[]): ThreadMessageLike[] => {
+    return rawMessages
+      .filter((msg): msg is Record<string, unknown> => typeof msg === 'object' && msg !== null)
+      .map(msg => {
+        const createdAtRaw = msg.createdAt;
+        const createdAt =
+          typeof createdAtRaw === 'string' || typeof createdAtRaw === 'number'
+            ? new Date(createdAtRaw)
+            : new Date();
+        return {
+          ...(msg as ThreadMessageLike),
+          createdAt,
+        };
+      });
+  }, []);
+
+  const deriveSessionTitle = useCallback((nextMessages: ThreadMessageLike[]): string => {
+    const firstUser = nextMessages.find(m => m.role === 'user');
+    const contentParts: unknown[] = Array.isArray(firstUser?.content) ? firstUser.content : [];
+    const textPart = contentParts.find(
+      (part): part is { type: 'text'; text?: string } =>
+        typeof part === 'object' &&
+        part !== null &&
+        'type' in part &&
+        (part as { type?: unknown }).type === 'text'
+    );
+    const text = textPart ? String(textPart.text ?? '') : '';
+    const trimmed = text.trim();
+    if (!trimmed) return 'New conversation';
+    return trimmed.length > 60 ? `${trimmed.slice(0, 60)}…` : trimmed;
+  }, []);
+
+  // Stable ref so onNew can call the latest initSession without adding it to deps
+  const initSessionRef = useRef<() => Promise<void>>(() => Promise.resolve());
 
   const initSession = useCallback(async () => {
+    // Increment counter — any in-flight init with a stale counter will be discarded
+    const thisInit = ++initCounterRef.current;
+
     if (clientRef.current) {
       try {
         await clientRef.current.stop();
@@ -98,46 +164,123 @@ export function useOfficeChat(host: OfficeHostApp) {
 
     try {
       const client = await withTimeout(createWebSocketClient(wsUrl), 15_000, 'WebSocket connect');
+
+      // If a newer initSession started while we were connecting, discard this one
+      if (initCounterRef.current !== thisInit) {
+        void client.stop().catch(() => {
+          /* discard */
+        });
+        return;
+      }
+
       clientRef.current = client;
       console.log('[chat] WebSocket connected');
 
       const resolvedAgent = resolveActiveAgent(activeAgentId, host);
-      const agentInstructions = resolvedAgent?.instructions ?? '';
-      const skillContext = buildSkillContext(activeSkillNames ?? undefined, host);
-      const systemContent = `${buildSystemPrompt(host)}\n\n${agentInstructions}${skillContext}`;
 
-      const activeMcp = resolveActiveMcpServers(importedMcpServers, activeMcpServerNames).filter(
-        s => s.name !== 'workiq'
+      // System prompt: only base + app prompt (no agent/skill concatenation)
+      const systemContent = buildSystemPrompt(host);
+
+      // Build imported skill payloads for the proxy to write to disk
+      const importedHostSkills = getImportedSkills().filter(
+        s => s.metadata.hosts.length === 0 || s.metadata.hosts.includes(host as AgentHost)
       );
-      if (workiqEnabled) {
-        activeMcp.push(WORKIQ_MCP_SERVER);
-      }
+      const skills = importedHostSkills.map(s => ({
+        name: s.metadata.name,
+        content: skillToMarkdown(s),
+      }));
 
+      // Compute disabled skill names from activeSkillNames
+      const allHostSkillNames = getSkills()
+        .filter(s => s.metadata.hosts.length === 0 || s.metadata.hosts.includes(host as AgentHost))
+        .map(s => s.metadata.name);
+      const disabledSkills =
+        activeSkillNames !== null
+          ? allHostSkillNames.filter(name => !activeSkillNames.includes(name))
+          : [];
+
+      // Build custom agent config for the SDK
+      const customAgents = resolvedAgent
+        ? [
+            {
+              name: resolvedAgent.metadata.name,
+              description: resolvedAgent.metadata.description,
+              prompt: resolvedAgent.instructions,
+            },
+          ]
+        : undefined;
+
+      // Resolve active MCP servers, intersect with agent allowlist if specified
+      let activeServers = resolveActiveMcpServers(importedMcpServers, activeMcpServerNames);
+      if (resolvedAgent?.metadata.mcpServers !== undefined) {
+        const agentMcpAllowlist = new Set(resolvedAgent.metadata.mcpServers);
+        activeServers = activeServers.filter(s => agentMcpAllowlist.has(s.name));
+      }
+      // WorkIQ: exclude legacy 'workiq' entry, then re-add if enabled
+      activeServers = activeServers.filter(s => s.name !== 'workiq');
+      if (workiqEnabled) {
+        activeServers.push(WORKIQ_MCP_SERVER);
+      }
+      const mcpServers = activeServers.length > 0 ? toSdkMcpServers(activeServers) : undefined;
+
+      // Per-agent tool restriction (omit = all tools available)
+      const availableTools = resolvedAgent?.metadata.tools;
+
+      // Use dedicated WorkIQ model if enabled and set, otherwise use active model
       const sessionModel = workiqEnabled && workiqModel ? workiqModel : activeModel;
 
       const session = await withTimeout(
-        client.createSession(
-          {
-            model: sessionModel,
-            systemMessage: { mode: 'replace', content: systemContent },
-            tools: getToolsForHost(host),
-          },
-          activeMcp
-        ),
+        client.createSession({
+          model: sessionModel,
+          systemMessage: { mode: 'replace', content: systemContent },
+          tools: getToolsForHost(host),
+          mcpServers,
+          availableTools,
+          host,
+          skills,
+          disabledSkills,
+          customAgents,
+          npmSkillPackages: npmSkillPackages.length > 0 ? npmSkillPackages : undefined,
+        }),
         60_000,
         'session.create'
       );
+
+      // If a newer initSession started while we were creating the session, discard
+      if (initCounterRef.current !== thisInit) {
+        void client.stop().catch(() => {
+          /* discard */
+        });
+        return;
+      }
+
       sessionRef.current = session;
       setSessionError(null);
+      setPendingPermission(null);
+      activePermissionRequestRef.current = null;
       console.log('[chat] Session created:', session.sessionId);
+
+      session.onPermissionRequest(payload => {
+        const autoDecision = evaluatePermission(payload.request);
+        if (autoDecision === 'approved') {
+          void session.respondPermission(payload.requestId, 'approved');
+          return;
+        }
+        activePermissionRequestRef.current = payload.requestId;
+        setPendingPermission(payload);
+      });
 
       // Fetch available models (non-blocking, with timeout)
       void loadAvailableModels(client);
     } catch (err) {
+      // If superseded by a newer init, silently bail
+      if (initCounterRef.current !== thisInit) return;
       console.error('[chat] initSession failed:', err);
       setSessionError(err instanceof Error ? err : new Error(String(err)));
     } finally {
-      setIsConnecting(false);
+      if (initCounterRef.current === thisInit) {
+        setIsConnecting(false);
+      }
     }
   }, [
     activeModel,
@@ -146,9 +289,41 @@ export function useOfficeChat(host: OfficeHostApp) {
     activeAgentId,
     importedMcpServers,
     activeMcpServerNames,
+    evaluatePermission,
     workiqEnabled,
     workiqModel,
   ]);
+
+  useEffect(() => {
+    initSessionRef.current = initSession;
+  }, [initSession]);
+
+  useEffect(() => {
+    if (restoredInitialSessionRef.current) return;
+
+    if (!activeSessionId) {
+      createSession(host);
+      restoredInitialSessionRef.current = true;
+      return;
+    }
+
+    const active = sessions.find(s => s.id === activeSessionId);
+    if (active && active.messages.length > 0) {
+      setMessages(deserializeMessages(active.messages));
+    }
+
+    restoredInitialSessionRef.current = true;
+  }, [activeSessionId, createSession, deserializeMessages, host, sessions]);
+
+  useEffect(() => {
+    if (!restoredInitialSessionRef.current) return;
+    const title = deriveSessionTitle(messages);
+    upsertActiveSession({
+      host,
+      title,
+      messages,
+    });
+  }, [deriveSessionTitle, host, messages, upsertActiveSession]);
 
   useEffect(() => {
     void initSession();
@@ -409,6 +584,10 @@ export function useOfficeChat(host: OfficeHostApp) {
 
     setMessages(prev => [...prev, userMsg, assistantMsg]);
     setIsRunning(true);
+    // Set explicit default text so the standalone ThinkingIndicator renders
+    // immediately via React context — no dependency on the runtime's deferred
+    // useEffect adapter sync.
+    setThinkingText('Thinking…');
 
     const toolParts = new Map<
       string,
@@ -432,7 +611,21 @@ export function useOfficeChat(host: OfficeHostApp) {
 
     try {
       const session = sessionRef.current;
+
+      // Stale-response watchdog: if no event arrives within 30s, warn the user.
+      // Reset on every event; cleared when the stream ends.
+      const STALE_TIMEOUT = 30_000;
+      let staleTimer: ReturnType<typeof setTimeout> | null = null;
+      const resetStaleTimer = () => {
+        if (staleTimer) clearTimeout(staleTimer);
+        staleTimer = setTimeout(() => {
+          setThinkingText('Still waiting for a response…');
+        }, STALE_TIMEOUT);
+      };
+      resetStaleTimer();
+
       for await (const event of session.query({ prompt: userText })) {
+        resetStaleTimer();
         if (cancelRef.current) break;
 
         if (event.type === 'assistant.message_delta') {
@@ -440,6 +633,20 @@ export function useOfficeChat(host: OfficeHostApp) {
           updateAssistant();
         } else if (event.type === 'tool.execution_start') {
           const { toolCallId, toolName, arguments: args } = event.data;
+          // report_intent is an internal SDK tool — surface intent as thinking text
+          if (toolName === 'report_intent') {
+            const intent = (args as Record<string, unknown> | undefined)?.intent;
+            if (typeof intent === 'string' && intent) {
+              // flushSync forces React to commit this state update to the DOM
+              // immediately, before the for-await loop processes the next
+              // buffered event.  Without it, React 18 automatic batching can
+              // merge this update with a later setThinkingText(null), so the
+              // intermediate text never appears on screen.
+              flushSync(() => setThinkingText(intent));
+            }
+            continue;
+          }
+          flushSync(() => setThinkingText(`${humanizeToolName(toolName)}…`));
           toolParts.set(toolCallId, {
             type: 'tool-call',
             toolCallId,
@@ -461,36 +668,130 @@ export function useOfficeChat(host: OfficeHostApp) {
           }
         } else if (event.type === 'assistant.message') {
           streamText = event.data.content;
+          setThinkingText(null);
           updateAssistant({ status: { type: 'complete', reason: 'stop' } });
         } else if (event.type === 'session.idle') {
           // Stream ended — finalize message if it wasn't already completed by
           // an assistant.message event (e.g. streaming-only responses).
+          setThinkingText(null);
           updateAssistant({ status: { type: 'complete', reason: 'stop' } });
         } else if (event.type === 'session.error') {
+          setThinkingText(null);
           updateAssistant({
             status: { type: 'incomplete', reason: 'error', error: event.data.message },
           });
           break;
         }
       }
+      if (staleTimer) clearTimeout(staleTimer);
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      setMessages(prev =>
-        prev.map(m =>
-          m.id === assistantId
-            ? { ...m, status: { type: 'incomplete', reason: 'error', error: errMsg } }
-            : m
-        )
-      );
+      // Auto-reconnect if the Copilot session was lost (e.g. proxy restart, laptop sleep)
+      const isSessionLost =
+        errMsg.includes('Session') ||
+        errMsg.includes('not connected') ||
+        errMsg.includes('disconnected') ||
+        errMsg.includes('WebSocket closed');
+      if (isSessionLost) {
+        setMessages(prev =>
+          prev.map(m =>
+            m.id === assistantId
+              ? {
+                  ...m,
+                  content: [{ type: 'text', text: '🔄 Session lost — reconnecting…' }],
+                  status: { type: 'complete', reason: 'stop' },
+                }
+              : m
+          )
+        );
+        void initSessionRef.current();
+      } else {
+        setMessages(prev =>
+          prev.map(m =>
+            m.id === assistantId
+              ? { ...m, status: { type: 'incomplete', reason: 'error', error: errMsg } }
+              : m
+          )
+        );
+      }
     } finally {
+      setThinkingText(null);
       setIsRunning(false);
     }
   }, []);
 
   const clearMessages = useCallback(() => {
     setMessages([]);
+    setPendingPermission(null);
+    activePermissionRequestRef.current = null;
+    createSession(host);
     void initSession();
-  }, [initSession]);
+  }, [createSession, host, initSession]);
+
+  const restoreSession = useCallback(
+    (sessionId: string) => {
+      const session = sessions.find(s => s.id === sessionId);
+      if (!session) return;
+      setActiveSession(sessionId);
+      setMessages(deserializeMessages(session.messages));
+      setPendingPermission(null);
+      activePermissionRequestRef.current = null;
+      void initSession();
+    },
+    [deserializeMessages, initSession, sessions, setActiveSession]
+  );
+
+  const deleteSession = useCallback(
+    (sessionId: string) => {
+      deleteSessionHistoryItem(sessionId);
+      if (activeSessionId === sessionId) {
+        setMessages([]);
+        createSession(host);
+        void initSession();
+      }
+    },
+    [activeSessionId, createSession, deleteSessionHistoryItem, host, initSession]
+  );
+
+  const respondPermission = useCallback(async (decision: 'approved' | 'denied') => {
+    const session = sessionRef.current;
+    const requestId = activePermissionRequestRef.current;
+    if (!session || !requestId) return;
+    try {
+      await session.respondPermission(requestId, decision);
+    } finally {
+      if (activePermissionRequestRef.current === requestId) {
+        activePermissionRequestRef.current = null;
+        setPendingPermission(null);
+      }
+    }
+  }, []);
+
+  const approvePermission = useCallback(() => {
+    void respondPermission('approved');
+  }, [respondPermission]);
+
+  const denyPermission = useCallback(() => {
+    void respondPermission('denied');
+  }, [respondPermission]);
+
+  const allowPermissionAlways = useCallback(() => {
+    const request = pendingPermission?.request;
+    if (!request) return;
+    const pathPrefix =
+      (typeof request.path === 'string' && request.path) ||
+      (typeof request.fileName === 'string' && request.fileName) ||
+      (typeof request.fullCommandText === 'string' && request.fullCommandText) ||
+      null;
+
+    if (pathPrefix) {
+      addPermissionRule({
+        kind: request.kind,
+        pathPrefix,
+      });
+    }
+    void respondPermission('approved');
+  }, [addPermissionRule, pendingPermission, respondPermission]);
 
   const runtime = useExternalStoreRuntime<ThreadMessageLike>({
     isRunning,
@@ -504,5 +805,20 @@ export function useOfficeChat(host: OfficeHostApp) {
     convertMessage: (msg: ThreadMessageLike) => msg,
   });
 
-  return { runtime, sessionError, isConnecting, clearMessages, clientRef };
+  return {
+    runtime,
+    sessionError,
+    isConnecting,
+    clearMessages,
+    restoreSession,
+    deleteSession,
+    sessions,
+    activeSessionId,
+    pendingPermission,
+    allowAllPermissions,
+    approvePermission,
+    denyPermission,
+    allowPermissionAlways,
+    thinkingText,
+  };
 }

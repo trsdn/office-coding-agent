@@ -51,6 +51,8 @@ export function parseAgentFrontmatter(raw: string): AgentConfig {
     version: '0.0.0',
     hosts: [],
     defaultForHosts: [],
+    tools: undefined,
+    mcpServers: undefined,
   };
 
   let currentKey = '';
@@ -62,7 +64,10 @@ export function parseAgentFrontmatter(raw: string): AgentConfig {
 
     if (
       trimmedLine.startsWith('- ') &&
-      (currentKey === 'hosts' || currentKey === 'defaultForHosts')
+      (currentKey === 'hosts' ||
+        currentKey === 'defaultForHosts' ||
+        currentKey === 'tools' ||
+        currentKey === 'mcpServers')
     ) {
       setAgentArrayField(metadata, currentKey, [trimmedLine.slice(2).trim()]);
       continue;
@@ -94,7 +99,12 @@ export function parseAgentFrontmatter(raw: string): AgentConfig {
     } else if (value === '') {
       continue;
     } else {
-      if (currentKey === 'hosts' || currentKey === 'defaultForHosts') {
+      if (
+        currentKey === 'hosts' ||
+        currentKey === 'defaultForHosts' ||
+        currentKey === 'tools' ||
+        currentKey === 'mcpServers'
+      ) {
         setAgentArrayField(metadata, currentKey, parseInlineArray(value));
         continue;
       }
@@ -151,6 +161,14 @@ function setAgentArrayField(metadata: AgentMetadata, key: string, values: string
 
   if (key === 'defaultForHosts') {
     metadata.defaultForHosts = Array.from(new Set([...metadata.defaultForHosts, ...normalized]));
+  }
+
+  if (key === 'tools') {
+    metadata.tools = Array.from(new Set([...(metadata.tools ?? []), ...values]));
+  }
+
+  if (key === 'mcpServers') {
+    metadata.mcpServers = Array.from(new Set([...(metadata.mcpServers ?? []), ...values]));
   }
 }
 

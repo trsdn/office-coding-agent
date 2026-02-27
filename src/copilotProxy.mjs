@@ -10,9 +10,103 @@
 
 import { WebSocketServer } from 'ws';
 import { CopilotClient } from '@github/copilot-sdk';
-import { loadMcpTools, closeMcpClients } from './mcpClient.mjs';
+import { mkdir, writeFile, rm, readdir } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+
+const execFileAsync = promisify(execFile);
+/** On Windows, npm is npm.cmd — use the .cmd variant when on win32. */
+const NPM_CMD = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+/** execFileAsync options for npm: shell:true is required on Windows for .cmd files. */
+const NPM_EXEC_OPTS = process.platform === 'win32' ? { shell: true } : {};
 
 // ── LSP framing helpers ─────────────────────────────────────────────────────
+
+/** Convert a name to a safe lowercase directory slug. */
+function slugify(name) {
+  const slug = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return slug || 'skill';
+}
+
+/**
+ * Scan a node_modules directory for skillpm-compatible skill directories.
+ * The skillpm spec places skills at: node_modules/<pkg>/skills/<name>/SKILL.md
+ * Returns an array of skill subdirectory paths (the directory containing SKILL.md).
+ *
+ * @param {string} nodeModulesDir - path to node_modules
+ * @returns {Promise<string[]>}
+ */
+async function findSkillDirs(nodeModulesDir) {
+  const skillDirs = [];
+  let pkgEntries;
+  try {
+    pkgEntries = await readdir(nodeModulesDir, { withFileTypes: true });
+  } catch {
+    return skillDirs; // node_modules doesn't exist
+  }
+
+  for (const entry of pkgEntries) {
+    // Handle scoped packages (@org/...)
+    if (entry.isDirectory() && entry.name.startsWith('@')) {
+      const scopeDir = join(nodeModulesDir, entry.name);
+      let scopedEntries;
+      try {
+        scopedEntries = await readdir(scopeDir, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      for (const scopedEntry of scopedEntries) {
+        if (scopedEntry.isDirectory()) {
+          const pkgDir = join(scopeDir, scopedEntry.name);
+          const dirs = await findSkillDirsInPackage(pkgDir);
+          skillDirs.push(...dirs);
+        }
+      }
+    } else if (entry.isDirectory()) {
+      const pkgDir = join(nodeModulesDir, entry.name);
+      const dirs = await findSkillDirsInPackage(pkgDir);
+      skillDirs.push(...dirs);
+    }
+  }
+  return skillDirs;
+}
+
+/**
+ * Within a single package directory, find all skills/<name>/ subdirs that contain SKILL.md.
+ *
+ * @param {string} pkgDir
+ * @returns {Promise<string[]>}
+ */
+async function findSkillDirsInPackage(pkgDir) {
+  const skillsRoot = join(pkgDir, 'skills');
+  const result = [];
+  let skillSubdirs;
+  try {
+    skillSubdirs = await readdir(skillsRoot, { withFileTypes: true });
+  } catch {
+    return result; // no skills/ directory in this package
+  }
+  for (const sub of skillSubdirs) {
+    if (sub.isDirectory()) {
+      const skillDir = join(skillsRoot, sub.name);
+      if (existsSync(join(skillDir, 'SKILL.md'))) {
+        result.push(skillDir);
+      }
+    }
+  }
+  return result;
+}
+
+/** Root directory for bundled skills; each host has its own subdirectory. */
+const BUNDLED_SKILLS_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), 'skills');
 
 /** Wrap a JSON payload in an LSP Content-Length frame. */
 function lspFrame(obj) {
@@ -88,8 +182,11 @@ async function handleConnection(ws) {
   /** @type {Map<string, () => void>} */
   const eventUnsubs = new Map();
 
-  /** @type {Map<string, Array<{ name: string, client: import('@modelcontextprotocol/sdk/client/index.js').Client }>>} */
-  const sessionMcpClients = new Map();
+  /** @type {Map<string, string>} Temp skill directories keyed by sessionId for cleanup. */
+  const sessionTempDirs = new Map();
+
+  /** @type {Map<string, string[]>} All npm temp dirs keyed by sessionId for cleanup. */
+  const sessionNpmTempDirs = new Map();
 
   /** Send a JSON-RPC response back to the browser. */
   function sendResponse(id, result) {
@@ -120,6 +217,9 @@ async function handleConnection(ws) {
   /** @type {Map<number, { resolve: Function, reject: Function }>} */
   const pendingRequests = new Map();
 
+  /** @type {Map<string, { sessionId: string, resolve: (decision: 'approved'|'denied') => void, timer: NodeJS.Timeout }>} */
+  const pendingPermissionResponses = new Map();
+
   function sendRequest(method, params) {
     return new Promise((resolve, reject) => {
       const id = nextRequestId++;
@@ -130,6 +230,30 @@ async function handleConnection(ws) {
         pendingRequests.delete(id);
         reject(new Error('WebSocket closed'));
       }
+    });
+  }
+
+  /** Request explicit permission decision from the browser UI. */
+  function requestPermissionDecision(sessionId, request) {
+    const requestId = randomUUID();
+    sendNotification('permission.request', {
+      sessionId,
+      requestId,
+      request,
+    });
+
+    return new Promise(resolve => {
+      const timer = setTimeout(() => {
+        pendingPermissionResponses.delete(requestId);
+        console.warn(`[proxy] permission.request timed out (${requestId}) — default deny`);
+        resolve('denied');
+      }, 60_000);
+
+      pendingPermissionResponses.set(requestId, {
+        sessionId,
+        resolve,
+        timer,
+      });
     });
   }
 
@@ -197,9 +321,9 @@ async function handleConnection(ws) {
 
     switch (method) {
       case 'session.create': {
-        const { model, sessionId, systemMessage, tools: toolDefs, mcpServers } = params || {};
+        const { host, model, sessionId, systemMessage, tools: toolDefs, mcpServers, availableTools, skills, disabledSkills, customAgents, npmSkillPackages } = params || {};
         console.log(
-          `[proxy] session.create requested (model=${model}, sessionId=${sessionId}, tools=${(toolDefs || []).length}, mcpServers=${(mcpServers || []).length})`
+          `[proxy] session.create requested (host=${host}, model=${model}, sessionId=${sessionId}, tools=${(toolDefs || []).length}, mcpServers=${Object.keys(mcpServers || {}).length}, skills=${(skills || []).length}, npmSkillPackages=${(npmSkillPackages || []).length}, customAgents=${(customAgents || []).length})`
         );
         // Build SDK Tool[] with handlers that forward tool calls to the browser
         const tools = (toolDefs || []).map(t => ({
@@ -217,16 +341,64 @@ async function handleConnection(ws) {
           },
         }));
 
-        // Load MCP tools from configured servers (executed server-side)
-        const mcpTrackingKey = `__pending_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-        if (mcpServers && mcpServers.length > 0) {
-          try {
-            const { tools: mcpTools, clients: mcpClients } = await loadMcpTools(mcpServers);
-            tools.push(...mcpTools);
-            // Track clients for cleanup when session is destroyed
-            sessionMcpClients.set(mcpTrackingKey, mcpClients);
-          } catch (err) {
-            console.warn('[proxy] MCP tool loading failed:', err.message);
+        // Point to the host-specific bundled skills directory if it exists
+        const skillDirectories = [];
+        const hostSkillDir = host ? join(BUNDLED_SKILLS_ROOT, slugify(host)) : null;
+        if (hostSkillDir && existsSync(hostSkillDir)) {
+          skillDirectories.push(hostSkillDir);
+        }
+
+        // Write imported skills to a temp directory so the SDK can load them
+        let tempSkillDir = null;
+        if (skills && skills.length > 0) {
+          tempSkillDir = join(tmpdir(), `oca-skills-${randomUUID()}`);
+          await mkdir(tempSkillDir, { recursive: true });
+          for (const skill of skills) {
+            const skillDir = join(tempSkillDir, slugify(skill.name));
+            await mkdir(skillDir, { recursive: true });
+            await writeFile(join(skillDir, 'SKILL.md'), skill.content, 'utf8');
+          }
+          skillDirectories.push(tempSkillDir);
+        }
+
+        // Install skillpm skill packages and add their skill subdirs to skillDirectories.
+        // Uses skillpm (https://skillpm.dev) — the Agent Skills package manager built on npm.
+        // skillpm packages follow the spec: skills live in skills/<name>/SKILL.md inside the package.
+        // We run `npm install` directly (no global skillpm needed) and then scan for skill dirs.
+        const npmTempDirs = [];
+        if (npmSkillPackages && npmSkillPackages.length > 0) {
+          // Regex: allow scoped (@org/name) and plain package names, with optional @version suffix
+          const NPM_PKG_RE = /^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*(@[^\s/]+)?$/i;
+          for (const pkg of npmSkillPackages) {
+            if (typeof pkg !== 'string' || !NPM_PKG_RE.test(pkg.trim())) {
+              console.warn(`[proxy] Skipping invalid skillpm package name: "${pkg}"`);
+              continue;
+            }
+            const installDir = join(tmpdir(), `oca-skillpm-${randomUUID()}`);
+            await mkdir(installDir, { recursive: true });
+            npmTempDirs.push(installDir);
+            try {
+              // Run `npm install --prefix <dir> --no-save <pkg>` asynchronously
+              // so the Node.js event loop is never blocked.
+              await execFileAsync(
+                NPM_CMD,
+                ['install', '--prefix', installDir, '--no-save', pkg.trim()],
+                { ...NPM_EXEC_OPTS, timeout: 60_000 },
+              );
+
+              // Discover skill directories: skillpm packages put skills under
+              // node_modules/<pkgBaseName>/skills/<skillName>/SKILL.md
+              const skillDirs = await findSkillDirs(join(installDir, 'node_modules'));
+              for (const dir of skillDirs) {
+                skillDirectories.push(dir);
+                console.log(`[proxy] Added skillpm skill dir "${dir}" from package "${pkg}"`);
+              }
+              if (skillDirs.length === 0) {
+                console.warn(`[proxy] No skill dirs found in "${pkg}" — ensure it follows skillpm layout (skills/<name>/SKILL.md)`);
+              }
+            } catch (err) {
+              console.warn(`[proxy] Failed to install skillpm package "${pkg}":`, err.message);
+            }
           }
         }
 
@@ -238,21 +410,40 @@ async function handleConnection(ws) {
             sessionId,
             systemMessage,
             tools,
+            mcpServers,
+            availableTools,
+            skillDirectories,
+            disabledSkills: disabledSkills?.length > 0 ? disabledSkills : undefined,
+            customAgents: customAgents?.length > 0 ? customAgents : undefined,
+            onPermissionRequest: async request => {
+              console.log(`[proxy] permission.request received: ${request.kind}`);
+              const decision = await requestPermissionDecision(session.sessionId, request);
+              console.log(`[proxy] permission.request resolved: ${request.kind} => ${decision}`);
+              return { kind: decision };
+            },
           });
         } catch (err) {
+          // Clean up temp directories on failure
+          if (tempSkillDir) {
+            void rm(tempSkillDir, { recursive: true, force: true }).catch(() => {});
+          }
+          for (const dir of npmTempDirs) {
+            void rm(dir, { recursive: true, force: true }).catch(() => {});
+          }
           console.error('[proxy] session.create failed:', err);
           sendError(id, -32603, err.message || 'Failed to create session');
           break;
         }
 
         sessions.set(session.sessionId, session);
-        markHealthy();
-        // Re-key MCP clients from temp tracking key to actual session ID
-        const pendingClients = sessionMcpClients.get(mcpTrackingKey);
-        if (pendingClients) {
-          sessionMcpClients.delete(mcpTrackingKey);
-          sessionMcpClients.set(session.sessionId, pendingClients);
+        if (tempSkillDir) {
+          sessionTempDirs.set(session.sessionId, tempSkillDir);
         }
+        // Track ALL npm temp dirs for cleanup on session destroy
+        if (npmTempDirs.length > 0) {
+          sessionNpmTempDirs.set(session.sessionId, npmTempDirs);
+        }
+        markHealthy();
         console.log(`[proxy] session.create succeeded (sessionId=${session.sessionId})`);
 
         // Subscribe to all session events and forward them to the browser
@@ -287,14 +478,22 @@ async function handleConnection(ws) {
           const unsub = eventUnsubs.get(sessionId);
           unsub?.();
           eventUnsubs.delete(sessionId);
-          // Close MCP clients for this session
-          const mcpClients = sessionMcpClients.get(sessionId);
-          if (mcpClients) {
-            sessionMcpClients.delete(sessionId);
-            void closeMcpClients(mcpClients);
-          }
           await session.destroy();
           sessions.delete(sessionId);
+          // Clean up temp skill directory
+          const tempDir = sessionTempDirs.get(sessionId);
+          if (tempDir) {
+            sessionTempDirs.delete(sessionId);
+            void rm(tempDir, { recursive: true, force: true }).catch(() => {});
+          }
+          // Clean up all npm skill temp directories
+          const npmDirs = sessionNpmTempDirs.get(sessionId);
+          if (npmDirs) {
+            sessionNpmTempDirs.delete(sessionId);
+            for (const dir of npmDirs) {
+              void rm(dir, { recursive: true, force: true }).catch(() => {});
+            }
+          }
         }
         sendResponse(id, {});
         break;
@@ -318,6 +517,25 @@ async function handleConnection(ws) {
         break;
       }
 
+      case 'permission.respond': {
+        const { sessionId, requestId, decision } = params || {};
+        const pending = pendingPermissionResponses.get(requestId);
+        if (!pending) {
+          sendError(id, -32602, `Permission request '${requestId}' not found`);
+          return;
+        }
+        if (pending.sessionId !== sessionId) {
+          sendError(id, -32602, `Permission request '${requestId}' does not belong to session '${sessionId}'`);
+          return;
+        }
+        const normalizedDecision = decision === 'approved' ? 'approved' : 'denied';
+        clearTimeout(pending.timer);
+        pendingPermissionResponses.delete(requestId);
+        pending.resolve(normalizedDecision);
+        sendResponse(id, {});
+        break;
+      }
+
       default:
         sendError(id, -32601, `Method '${method}' not supported`);
     }
@@ -332,18 +550,18 @@ async function handleConnection(ws) {
     }
     eventUnsubs.clear();
 
-    // Close all MCP clients for this connection
-    for (const mcpClients of sessionMcpClients.values()) {
-      void closeMcpClients(mcpClients);
-    }
-    sessionMcpClients.clear();
-
     // Reject any pending tool.call promises — without this they hang forever
     // because the browser that was supposed to reply has disconnected.
     for (const pending of pendingRequests.values()) {
       pending.reject(new Error('WebSocket disconnected'));
     }
     pendingRequests.clear();
+
+    for (const pending of pendingPermissionResponses.values()) {
+      clearTimeout(pending.timer);
+      pending.resolve('denied');
+    }
+    pendingPermissionResponses.clear();
 
     // Destroy server-side sessions so the shared CopilotClient doesn't
     // accumulate open sessions across reconnects.
@@ -355,6 +573,20 @@ async function handleConnection(ws) {
       }
     }
     sessions.clear();
+
+    // Clean up all temp skill directories for this connection
+    for (const tempDir of sessionTempDirs.values()) {
+      void rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    }
+    sessionTempDirs.clear();
+
+    // Clean up all npm skill temp directories for this connection
+    for (const npmDirs of sessionNpmTempDirs.values()) {
+      for (const dir of npmDirs) {
+        void rm(dir, { recursive: true, force: true }).catch(() => {});
+      }
+    }
+    sessionNpmTempDirs.clear();
   }
 
   ws.on('close', () => {

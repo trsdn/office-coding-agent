@@ -47,6 +47,10 @@ interface SettingsState extends UserSettings {
   removeMcpServer: (serverName: string) => void;
   toggleMcpServer: (serverName: string) => void;
 
+  // ─── npm skill packages ───
+  addNpmSkillPackage: (packageName: string) => void;
+  removeNpmSkillPackage: (packageName: string) => void;
+
   // ─── WorkIQ ───
   toggleWorkiq: () => void;
   setWorkiqModel: (modelId: string | null) => void;
@@ -232,6 +236,20 @@ export const useSettingsStore = create<SettingsState>()(
         });
       },
 
+      // ─── npm skill packages ───
+      addNpmSkillPackage: packageName => {
+        set(state => {
+          if (state.npmSkillPackages.includes(packageName)) return state;
+          return { npmSkillPackages: [...state.npmSkillPackages, packageName] };
+        });
+      },
+
+      removeNpmSkillPackage: packageName => {
+        set(state => ({
+          npmSkillPackages: state.npmSkillPackages.filter(p => p !== packageName),
+        }));
+      },
+
       // ─── WorkIQ ───
       toggleWorkiq: () => {
         set(state => ({ workiqEnabled: !state.workiqEnabled }));
@@ -259,6 +277,7 @@ export const useSettingsStore = create<SettingsState>()(
         importedAgents: state.importedAgents,
         importedMcpServers: state.importedMcpServers,
         activeMcpServerNames: state.activeMcpServerNames,
+        npmSkillPackages: state.npmSkillPackages,
         workiqEnabled: state.workiqEnabled,
         workiqModel: state.workiqModel,
         // availableModels is NOT persisted — it's always fetched fresh from the

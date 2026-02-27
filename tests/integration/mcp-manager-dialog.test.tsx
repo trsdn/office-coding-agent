@@ -85,7 +85,7 @@ describe('Integration: McpManagerDialog', () => {
     });
   });
 
-  it('imports stdio entries successfully', async () => {
+  it('imports stdio (npx) entries from mcp.json successfully', async () => {
     renderWithProviders(<OpenDialog />);
 
     const stdioOnly = { mcpServers: { srv: { command: 'node', args: ['server.js'] } } };
@@ -93,8 +93,11 @@ describe('Integration: McpManagerDialog', () => {
     await userEvent.upload(fileInput, makeJsonFile(stdioOnly));
 
     await waitFor(() => {
-      expect(screen.getByText('srv')).toBeInTheDocument();
+      expect(screen.getByRole('status')).toHaveTextContent('Imported 1 server from mcp.json.');
     });
+    expect(screen.getByText('srv')).toBeInTheDocument();
+    // Shows command + args as fallback description
+    expect(screen.getByText('node server.js')).toBeInTheDocument();
   });
 
   it('servers are active (aria-pressed=true) by default after import', async () => {

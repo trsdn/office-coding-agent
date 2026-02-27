@@ -1,17 +1,7 @@
 import type { AgentSkill, SkillMetadata } from '@/types/skill';
+import type { AgentHost } from '@/types/agent';
+import type { OfficeHostApp } from '@/services/office/host';
 import excelSkillRaw from '@/skills/excel/SKILL.md';
-import outlookSkillRaw from '@/skills/outlook/SKILL.md';
-import outlookEmailAnalysisSkillRaw from '@/skills/outlook-email-analysis/SKILL.md';
-import outlookDraftingSkillRaw from '@/skills/outlook-drafting/SKILL.md';
-import outlookCalendarSkillRaw from '@/skills/outlook-calendar/SKILL.md';
-import powerpointSkillRaw from '@/skills/powerpoint/SKILL.md';
-import powerpointDeckBuilderSkillRaw from '@/skills/powerpoint-deck-builder/SKILL.md';
-import powerpointRedesignSkillRaw from '@/skills/powerpoint-redesign/SKILL.md';
-import powerpointFormattingSkillRaw from '@/skills/powerpoint-formatting/SKILL.md';
-import wordSkillRaw from '@/skills/word/SKILL.md';
-import wordFormattingSkillRaw from '@/skills/word-formatting/SKILL.md';
-import wordDocumentBuilderSkillRaw from '@/skills/word-document-builder/SKILL.md';
-import wordTablesSkillRaw from '@/skills/word-tables/SKILL.md';
 
 /**
  * Parse YAML frontmatter from a skill markdown file.
@@ -22,7 +12,7 @@ export function parseFrontmatter(raw: string): { metadata: SkillMetadata; conten
 
   if (!trimmed.startsWith('---')) {
     return {
-      metadata: { name: 'unknown', description: '', version: '0.0.0', tags: [] },
+      metadata: { name: 'unknown', description: '', version: '0.0.0', tags: [], hosts: [] },
       content: trimmed,
     };
   }
@@ -30,7 +20,7 @@ export function parseFrontmatter(raw: string): { metadata: SkillMetadata; conten
   const endIndex = trimmed.indexOf('---', 3);
   if (endIndex === -1) {
     return {
-      metadata: { name: 'unknown', description: '', version: '0.0.0', tags: [] },
+      metadata: { name: 'unknown', description: '', version: '0.0.0', tags: [], hosts: [] },
       content: trimmed,
     };
   }
@@ -44,6 +34,7 @@ export function parseFrontmatter(raw: string): { metadata: SkillMetadata; conten
     description: '',
     version: '0.0.0',
     tags: [],
+    hosts: [],
   };
 
   let currentKey = '';
@@ -54,9 +45,13 @@ export function parseFrontmatter(raw: string): { metadata: SkillMetadata; conten
     const trimmedLine = line.trim();
 
     // Array items: "  - value"
-    if (trimmedLine.startsWith('- ') && currentKey === 'tags') {
+    if (trimmedLine.startsWith('- ') && (currentKey === 'tags' || currentKey === 'hosts')) {
       const itemValue = trimmedLine.slice(2).trim();
-      metadata.tags.push(itemValue);
+      if (currentKey === 'tags') {
+        metadata.tags.push(itemValue);
+      } else {
+        metadata.hosts.push(itemValue as AgentHost);
+      }
       continue;
     }
 
@@ -85,8 +80,10 @@ export function parseFrontmatter(raw: string): { metadata: SkillMetadata; conten
       isMultilineValue = true;
       multilineValue = '';
     } else if (value === '') {
-      // Could be start of array (tags:) — handled by "- " check above
+      // Could be start of array (tags: / hosts:) — handled by "- " check above
       continue;
+    } else if (currentKey === 'hosts') {
+      metadata.hosts = parseInlineArray(value) as AgentHost[];
     } else {
       setMetadataField(metadata, currentKey, value);
     }
@@ -98,6 +95,18 @@ export function parseFrontmatter(raw: string): { metadata: SkillMetadata; conten
   }
 
   return { metadata, content };
+}
+
+function parseInlineArray(value: string): string[] {
+  const trimmed = value.trim();
+  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+    return trimmed
+      .slice(1, -1)
+      .split(',')
+      .map(item => item.trim())
+      .filter(Boolean);
+  }
+  return [trimmed];
 }
 
 function setMetadataField(metadata: SkillMetadata, key: string, value: string): void {
@@ -120,33 +129,11 @@ function setMetadataField(metadata: SkillMetadata, key: string, value: string): 
     case 'documentation':
       metadata.documentation = value;
       break;
-    case 'hosts':
-      metadata.hosts = value
-        .replace(/^\[/, '')
-        .replace(/\]$/, '')
-        .split(',')
-        .map(h => h.trim())
-        .filter(Boolean);
-      break;
   }
 }
 
 function loadBundledSkills(): AgentSkill[] {
-  const bundledRawSkills = [
-    excelSkillRaw,
-    outlookSkillRaw,
-    outlookEmailAnalysisSkillRaw,
-    outlookDraftingSkillRaw,
-    outlookCalendarSkillRaw,
-    powerpointSkillRaw,
-    powerpointDeckBuilderSkillRaw,
-    powerpointRedesignSkillRaw,
-    powerpointFormattingSkillRaw,
-    wordSkillRaw,
-    wordFormattingSkillRaw,
-    wordDocumentBuilderSkillRaw,
-    wordTablesSkillRaw,
-  ];
+  const bundledRawSkills = [excelSkillRaw];
 
   const loaded = bundledRawSkills.map(raw => {
     const parsed = parseFrontmatter(raw);
@@ -172,15 +159,10 @@ export function setImportedSkills(skills: AgentSkill[]): void {
 }
 
 /**
- * Get all loaded agent skills, optionally filtered by host.
- * Skills with no `hosts` field are shown for all hosts.
+ * Get all loaded agent skills.
  */
-export function getSkills(host?: string): AgentSkill[] {
-  const all = [...bundledSkills, ...importedSkills];
-  if (!host) return all;
-  return all.filter(
-    s => !s.metadata.hosts || s.metadata.hosts.length === 0 || s.metadata.hosts.includes(host)
-  );
+export function getSkills(): AgentSkill[] {
+  return [...bundledSkills, ...importedSkills];
 }
 
 /**
@@ -194,15 +176,23 @@ export function getSkill(name: string): AgentSkill | undefined {
  * Build the combined skill context string for injection into the system prompt.
  * @param activeNames — if provided, only include skills whose names are in this list.
  *                       If omitted or empty, all bundled skills are included.
- * @param host — if provided, only include skills that match this host.
+ * @param host — if provided, only include skills compatible with this host.
+ *               Skills with empty hosts array are included for all hosts.
  * Returns an empty string if no skills match.
  */
-export function buildSkillContext(activeNames?: string[], host?: string): string {
-  let skills = getSkills(host);
+export function buildSkillContext(activeNames?: string[], host?: OfficeHostApp): string {
+  let skills = getSkills();
 
   // Filter to active names if provided (empty array = none active)
   if (activeNames !== undefined) {
     skills = skills.filter(s => activeNames.includes(s.metadata.name));
+  }
+
+  // Filter by host if provided (empty hosts = available to all hosts)
+  if (host) {
+    skills = skills.filter(
+      s => s.metadata.hosts.length === 0 || s.metadata.hosts.includes(host as AgentHost)
+    );
   }
 
   if (skills.length === 0) return '';
@@ -213,4 +203,17 @@ export function buildSkillContext(activeNames?: string[], host?: string): string
   );
 
   return `\n\n# Agent Skills\nThe following agent skills provide domain-specific knowledge. Use them to help the user with specialized tasks.${sections.join('')}`;
+}
+
+/** Serialize a skill to its YAML-frontmatter markdown format. */
+export function skillToMarkdown(skill: AgentSkill): string {
+  const { metadata, content } = skill;
+  const lines: string[] = ['---'];
+  lines.push(`name: ${metadata.name}`);
+  lines.push(`description: ${metadata.description}`);
+  lines.push(`version: ${metadata.version}`);
+  lines.push('---');
+  lines.push('');
+  lines.push(content);
+  return lines.join('\n');
 }

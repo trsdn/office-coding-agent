@@ -1,0 +1,195 @@
+/**
+ * Integration test: Word tools and their JSON Schema parameters.
+ *
+ * Validates that:
+ * - wordTools are well-formed (names, descriptions, handlers)
+ * - Each tool has correct JSON Schema parameters
+ * - each tool's schema accepts valid inputs and rejects invalid ones
+ *
+ * NOTE: Testing the handler logic requires a real Word.RequestContext and
+ * MUST be covered by E2E tests running in Word Desktop — not here.
+ */
+import { describe, it, expect } from 'vitest';
+import Ajv from 'ajv';
+import { wordTools } from '@/tools/word';
+
+const ajv = new Ajv({ allErrors: true });
+
+function validate(schema: unknown, data: unknown): boolean {
+  return Boolean(ajv.compile(schema as object)(data));
+}
+
+const toolsByName = Object.fromEntries(wordTools.map(t => [t.name, t]));
+
+const EXPECTED_TOOL_NAMES = [
+  'get_document_overview',
+  'get_document_content',
+  'get_document_section',
+  'set_document_content',
+  'get_selection',
+  'get_selection_text',
+  'insert_content_at_selection',
+  'find_and_replace',
+  'insert_table',
+  'apply_style_to_selection',
+  'insert_paragraph',
+  'insert_break',
+  'apply_paragraph_style',
+  'set_paragraph_format',
+  'get_document_properties',
+  'insert_image',
+  'get_comments',
+  'insert_list',
+  'get_content_controls',
+  'insert_text_at_bookmark',
+  'get_headers_footers',
+  'set_header_footer',
+  'get_table_data',
+  'add_table_rows',
+  'add_table_columns',
+  'delete_table_row',
+  'set_table_cell_value',
+  'insert_hyperlink',
+  'insert_footnote',
+  'insert_endnote',
+  'get_footnotes_endnotes',
+  'delete_content',
+  'insert_content_control',
+  'format_found_text',
+  'get_sections',
+] as const;
+
+// ─── Structural ───────────────────────────────────────────────────────────────
+
+describe('Integration: Word tools — structural', () => {
+  it('wordTools contains exactly the expected tools', () => {
+    const actual = wordTools.map(t => t.name).sort();
+    const expected = [...EXPECTED_TOOL_NAMES].sort();
+    expect(actual).toEqual(expected);
+  });
+
+  it('every tool has a non-empty name, description, and handler', () => {
+    for (const tool of wordTools) {
+      expect(tool.name.length).toBeGreaterThan(0);
+      expect(tool.description!.length).toBeGreaterThan(0);
+      expect(typeof tool.handler).toBe('function');
+    }
+  });
+
+  it('every tool has a parameters schema', () => {
+    for (const tool of wordTools) {
+      expect(tool.parameters).toBeDefined();
+    }
+  });
+});
+
+// ─── No-param tools ───────────────────────────────────────────────────────────
+
+describe('Integration: Word schema — no-param tools', () => {
+  it('get_document_overview accepts empty args', () => {
+    expect(validate(toolsByName.get_document_overview.parameters, {})).toBe(true);
+  });
+
+  it('get_document_content accepts empty args', () => {
+    expect(validate(toolsByName.get_document_content.parameters, {})).toBe(true);
+  });
+
+  it('get_selection accepts empty args', () => {
+    expect(validate(toolsByName.get_selection.parameters, {})).toBe(true);
+  });
+
+  it('get_selection_text accepts empty args', () => {
+    expect(validate(toolsByName.get_selection_text.parameters, {})).toBe(true);
+  });
+});
+
+// ─── get_document_section ─────────────────────────────────────────────────────
+
+describe('Integration: Word schema — get_document_section', () => {
+  it('requires headingText', () => {
+    const schema = toolsByName.get_document_section.parameters;
+    expect(validate(schema, {})).toBe(false);
+    expect(validate(schema, { headingText: 'Introduction' })).toBe(true);
+  });
+
+  it('rejects non-string headingText', () => {
+    expect(validate(toolsByName.get_document_section.parameters, { headingText: 42 })).toBe(false);
+  });
+});
+
+// ─── set_document_content ─────────────────────────────────────────────────────
+
+describe('Integration: Word schema — set_document_content', () => {
+  it('requires html', () => {
+    const schema = toolsByName.set_document_content.parameters;
+    expect(validate(schema, {})).toBe(false);
+    expect(validate(schema, { html: '<p>Hello</p>' })).toBe(true);
+  });
+});
+
+// ─── insert_content_at_selection ─────────────────────────────────────────────
+
+describe('Integration: Word schema — insert_content_at_selection', () => {
+  it('requires html', () => {
+    const schema = toolsByName.insert_content_at_selection.parameters;
+    expect(validate(schema, {})).toBe(false);
+    expect(validate(schema, { html: '<p>Inserted</p>' })).toBe(true);
+  });
+
+  it('accepts optional location enum values', () => {
+    const schema = toolsByName.insert_content_at_selection.parameters;
+    for (const loc of ['Replace', 'Before', 'After', 'Start', 'End']) {
+      expect(validate(schema, { html: '<p>x</p>', location: loc })).toBe(true);
+    }
+  });
+
+  it('rejects invalid location value', () => {
+    expect(
+      validate(toolsByName.insert_content_at_selection.parameters, {
+        html: '<p>x</p>',
+        location: 'Invalid',
+      })
+    ).toBe(false);
+  });
+});
+
+// ─── find_and_replace ─────────────────────────────────────────────────────────
+
+describe('Integration: Word schema — find_and_replace', () => {
+  it('requires find and replace', () => {
+    const schema = toolsByName.find_and_replace.parameters;
+    expect(validate(schema, {})).toBe(false);
+    expect(validate(schema, { find: 'foo' })).toBe(false);
+    expect(validate(schema, { find: 'foo', replace: 'bar' })).toBe(true);
+  });
+});
+
+// ─── insert_table ─────────────────────────────────────────────────────────────
+
+describe('Integration: Word schema — insert_table', () => {
+  it('requires rows and columns', () => {
+    const schema = toolsByName.insert_table.parameters;
+    expect(validate(schema, {})).toBe(false);
+    expect(validate(schema, { rows: 3 })).toBe(false);
+    expect(validate(schema, { rows: 3, columns: 4 })).toBe(true);
+  });
+
+  it('rejects non-integer rows/columns', () => {
+    const schema = toolsByName.insert_table.parameters;
+    expect(validate(schema, { rows: 'three', columns: 4 })).toBe(false);
+  });
+});
+
+// ─── apply_style_to_selection ─────────────────────────────────────────────────
+
+describe('Integration: Word schema — apply_style_to_selection', () => {
+  it('accepts empty args (all optional)', () => {
+    expect(validate(toolsByName.apply_style_to_selection.parameters, {})).toBe(true);
+  });
+
+  it('accepts style name', () => {
+    expect(
+      validate(toolsByName.apply_style_to_selection.parameters, { styleName: 'Heading 1' })
+    ).toBe(true);
+  });
+});

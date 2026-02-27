@@ -20,12 +20,15 @@ import {
   SquareIcon,
 } from 'lucide-react';
 import type { FC } from 'react';
-import { detectOfficeHost } from '@/services/office/host';
+import { useThinkingText } from '@/contexts/ThinkingContext';
 
 export const Thread: FC = () => {
   return (
     <ThreadPrimitive.Root className="aui-root aui-thread-root flex flex-1 min-h-0 flex-col bg-background">
-      <ThreadPrimitive.Viewport className="aui-thread-viewport relative flex flex-1 min-h-0 flex-col overflow-x-hidden overflow-y-auto scroll-smooth px-3 pt-3">
+      <ThreadPrimitive.Viewport
+        turnAnchor="bottom"
+        className="aui-thread-viewport relative flex flex-1 min-h-0 flex-col overflow-x-hidden overflow-y-auto scroll-smooth px-3 pt-3"
+      >
         <AuiIf condition={s => s.thread.isEmpty}>
           <ThreadWelcome />
         </AuiIf>
@@ -65,48 +68,16 @@ interface SuggestionItem {
   autoSend: boolean;
 }
 
-const SUGGESTIONS_BY_HOST: Record<string, SuggestionItem[]> = {
-  excel: [
-    { prompt: 'Analyze my data and show key insights', autoSend: true },
-    { prompt: 'Create a chart from selected data', autoSend: true },
-    { prompt: 'Add formulas to calculate totals and averages', autoSend: true },
-    { prompt: 'Find and highlight duplicates', autoSend: true },
-    { prompt: 'Clean up and organize my sheet', autoSend: true },
-    { prompt: 'Create a pivot table from my data', autoSend: true },
-  ],
-  outlook: [
-    { prompt: 'Summarize this email', autoSend: true },
-    { prompt: 'Draft a professional reply', autoSend: true },
-    { prompt: 'Extract action items and deadlines', autoSend: true },
-    { prompt: 'Translate this email to English', autoSend: true },
-    { prompt: 'Create a meeting from this email', autoSend: true },
-    { prompt: 'Analyze the attachments', autoSend: true },
-  ],
-  powerpoint: [
-    { prompt: 'Summarize this presentation', autoSend: true },
-    { prompt: 'Create 5 slides about a topic (deep)', autoSend: true },
-    { prompt: 'Redesign the current slide', autoSend: true },
-    { prompt: 'Add speaker notes to all slides', autoSend: true },
-    { prompt: 'Get an overview of all slides', autoSend: true },
-    { prompt: 'Fix formatting and layout issues', autoSend: true },
-  ],
-  word: [
-    { prompt: 'Summarize this document', autoSend: true },
-    { prompt: 'Create a report outline (gründlich)', autoSend: true },
-    { prompt: 'Format headings and styles consistently', autoSend: true },
-    { prompt: 'Insert a table with sample data', autoSend: true },
-    { prompt: 'Proofread and improve the writing', autoSend: true },
-    { prompt: 'Add headers, footers, and page numbers', autoSend: true },
-  ],
-};
-
-function getSuggestions(): SuggestionItem[] {
-  const host = detectOfficeHost();
-  return SUGGESTIONS_BY_HOST[host] ?? SUGGESTIONS_BY_HOST.excel;
-}
+const SUGGESTIONS: SuggestionItem[] = [
+  { prompt: 'Summarize my data', autoSend: true },
+  { prompt: 'Create a chart from selected data', autoSend: true },
+  { prompt: 'Format the table as currency', autoSend: true },
+  { prompt: 'Find and highlight duplicates', autoSend: true },
+  { prompt: 'Add a formula to calculate totals', autoSend: true },
+  { prompt: 'Clean up and organize my sheet', autoSend: true },
+];
 
 const ThreadWelcome: FC = () => {
-  const suggestions = getSuggestions();
   return (
     <div className="aui-thread-welcome-root my-auto flex w-full grow flex-col">
       <div className="aui-thread-welcome-center flex w-full grow flex-col items-center justify-center">
@@ -120,7 +91,7 @@ const ThreadWelcome: FC = () => {
         </div>
 
         <div className="mt-6 flex w-full flex-col gap-2 px-2">
-          {suggestions.map((suggestion, idx) => (
+          {SUGGESTIONS.map((suggestion, idx) => (
             <ThreadPrimitive.Suggestion
               key={suggestion.prompt}
               {...suggestion}
@@ -191,12 +162,14 @@ const MessageError: FC = () => {
   );
 };
 
-const ThinkingIndicator: FC = () => {
+const AssistantThinkingIndicator: FC = () => {
+  const thinkingText = useThinkingText();
+  if (thinkingText === null) return null;
   return (
-    <AuiIf condition={s => s.message.isLast && s.thread.isRunning}>
-      <div className="aui-thinking-indicator flex items-center gap-2 px-1 py-1 text-muted-foreground text-sm">
+    <AuiIf condition={s => s.message.status?.type === 'running'}>
+      <div className="aui-assistant-thinking-indicator fade-in animate-in duration-150 mt-1 flex items-center gap-2 px-1 text-muted-foreground text-sm">
         <LoaderIcon className="size-3.5 animate-spin" />
-        <span className="animate-pulse">Thinking…</span>
+        <span className="animate-pulse">{thinkingText}</span>
       </div>
     </AuiIf>
   );
@@ -215,7 +188,7 @@ const AssistantMessage: FC = () => {
             tools: { Fallback: ToolFallback },
           }}
         />
-        <ThinkingIndicator />
+        <AssistantThinkingIndicator />
         <MessageError />
       </div>
 

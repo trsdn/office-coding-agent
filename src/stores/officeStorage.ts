@@ -6,9 +6,9 @@
  * persists reliably across Excel sessions and is not tied to a specific
  * workbook — settings survive when the user opens a different file.
  *
- * This add-in requires SharedRuntime (manifest declares it), so
- * OfficeRuntime.storage is always available in production. Tests supply a
- * lightweight in-memory mock via tests/setup.ts.
+ * Falls back to window.localStorage when OfficeRuntime.storage isn't available
+ * for a host/runtime combination, allowing the task pane to boot in hosts
+ * with limited SharedRuntime support.
  *
  * @see https://learn.microsoft.com/javascript/api/office-runtime/officeruntime.storage
  */
@@ -20,30 +20,38 @@ interface OfficeRuntimeStorage {
   removeItem(key: string): Promise<void>;
 }
 
+let fallbackWarned = false;
+
+function localFallbackStorage(): OfficeRuntimeStorage {
+  if (typeof localStorage === 'undefined') {
+    throw new Error(
+      '[officeStorage] Neither OfficeRuntime.storage nor localStorage is available in this runtime.'
+    );
+  }
+
+  if (!fallbackWarned) {
+    fallbackWarned = true;
+    console.warn('[officeStorage] OfficeRuntime.storage unavailable; using localStorage fallback.');
+  }
+
+  return {
+    getItem: (key: string) => Promise.resolve(localStorage.getItem(key)),
+    setItem: (key: string, value: string) => {
+      localStorage.setItem(key, value);
+      return Promise.resolve();
+    },
+    removeItem: (key: string) => {
+      localStorage.removeItem(key);
+      return Promise.resolve();
+    },
+  };
+}
+
 function getStorage(): OfficeRuntimeStorage {
-  if (typeof OfficeRuntime !== 'undefined' && OfficeRuntime?.storage) {
-    return OfficeRuntime.storage as OfficeRuntimeStorage;
+  if (typeof OfficeRuntime === 'undefined' || !OfficeRuntime?.storage) {
+    return localFallbackStorage();
   }
-
-  // Fallback to localStorage for hosts without SharedRuntime (e.g. Outlook)
-  if (typeof localStorage !== 'undefined') {
-    return {
-      getItem: (key: string) => Promise.resolve(localStorage.getItem(key)),
-      setItem: (key: string, value: string) => {
-        localStorage.setItem(key, value);
-        return Promise.resolve();
-      },
-      removeItem: (key: string) => {
-        localStorage.removeItem(key);
-        return Promise.resolve();
-      },
-    };
-  }
-
-  throw new Error(
-    '[officeStorage] No storage backend available. ' +
-      'OfficeRuntime.storage requires SharedRuntime and localStorage is unavailable.'
-  );
+  return OfficeRuntime.storage as OfficeRuntimeStorage;
 }
 
 export const officeStorage: StateStorage = {

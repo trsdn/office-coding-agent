@@ -11,18 +11,19 @@ import {
   dataValidationConfigs,
   pivotTableConfigs,
 } from './configs';
-import type { ToolConfig } from './codegen/types';
+import type { ToolConfig, ToolConfigBase } from './codegen/types';
 import type { Tool } from '@github/copilot-sdk';
 import type { OfficeHostApp } from '@/services/office/host';
 import { powerPointTools } from './powerpoint';
 import { wordTools } from './word';
 import { outlookTools } from './outlook';
+import { managementTools } from './management';
 
-export { webFetchTool } from './general';
+export { managementTools } from './management';
 
 export const MAX_TOOLS_PER_REQUEST = 128;
 
-/** All tool configs combined for manifest generation */
+/** All Excel tool configs combined for manifest generation */
 export const allConfigs: readonly (readonly ToolConfig[])[] = [
   rangeConfigs,
   rangeFormatConfigs,
@@ -36,6 +37,11 @@ export const allConfigs: readonly (readonly ToolConfig[])[] = [
   pivotTableConfigs,
 ];
 
+/** All tool configs across all hosts — for manifest generation */
+export const allConfigsByHost: Record<string, readonly (readonly ToolConfigBase[])[]> = {
+  excel: allConfigs,
+};
+
 /** All Excel tools combined into a single array for Copilot SDK */
 export const excelTools: Tool[] = allConfigs.flatMap(configs => createTools(configs));
 
@@ -43,17 +49,26 @@ export { powerPointTools } from './powerpoint';
 export { wordTools } from './word';
 export { outlookTools } from './outlook';
 
+/** General-purpose tools included for all hosts */
+const generalTools: Tool[] = [...managementTools];
+
 export function getToolsForHost(host: OfficeHostApp): Tool[] {
+  let hostTools: Tool[];
   switch (host) {
     case 'excel':
-      return excelTools.slice(0, MAX_TOOLS_PER_REQUEST);
+      hostTools = excelTools;
+      break;
     case 'powerpoint':
-      return powerPointTools.slice(0, MAX_TOOLS_PER_REQUEST);
+      hostTools = powerPointTools;
+      break;
     case 'word':
-      return wordTools.slice(0, MAX_TOOLS_PER_REQUEST);
+      hostTools = wordTools;
+      break;
     case 'outlook':
-      return outlookTools.slice(0, MAX_TOOLS_PER_REQUEST);
+      hostTools = outlookTools;
+      break;
     default:
       return [];
   }
+  return [...hostTools, ...generalTools].slice(0, MAX_TOOLS_PER_REQUEST);
 }

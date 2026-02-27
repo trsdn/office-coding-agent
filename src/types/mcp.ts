@@ -7,14 +7,16 @@ export interface McpServerConfig {
   name: string;
   /** Optional description shown in the UI */
   description?: string;
-  /** MCP server endpoint URL (required for http/sse) */
-  url?: string;
   /** Transport protocol */
   transport: McpTransportType;
-  /** Optional HTTP headers (e.g. Authorization) — http/sse only */
+  /** MCP server endpoint URL (required for http/sse transport) */
+  url?: string;
+  /** Optional HTTP headers (e.g. Authorization) — for http/sse transport */
   headers?: Record<string, string>;
-  /** Command to spawn (stdio only) */
+  /** Executable command (required for stdio transport, e.g. "npx") */
   command?: string;
-  /** Arguments for the command (stdio only) */
+  /** Command arguments (for stdio transport) */
   args?: string[];
+  /** Optional environment variables (for stdio transport) */
+  env?: Record<string, string>;
 }

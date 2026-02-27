@@ -1,28 +1,51 @@
 import React, { useState } from 'react';
 import { RotateCcw, ServerIcon, BrainCircuit, ChevronDown } from 'lucide-react';
 import { SkillPicker } from './SkillPicker';
+import { SessionHistoryPicker } from './SessionHistoryPicker';
 import { McpManagerDialog } from './McpManagerDialog';
+import { PermissionManagerDialog } from './PermissionManagerDialog';
 import { useSettingsStore } from '@/stores';
+import type { SessionHistoryItem } from '@/stores/sessionHistoryStore';
+import type { OfficeHostApp } from '@/services/office/host';
 
 export interface ChatHeaderProps {
+  host: OfficeHostApp;
   onClearMessages: () => void;
+  sessions: SessionHistoryItem[];
+  activeSessionId: string | null;
+  onRestoreSession: (sessionId: string) => void;
+  onDeleteSession: (sessionId: string) => void;
 }
 
-export const ChatHeader: React.FC<ChatHeaderProps> = ({ onClearMessages }) => {
+export const ChatHeader: React.FC<ChatHeaderProps> = ({
+  host,
+  onClearMessages,
+  sessions,
+  activeSessionId,
+  onRestoreSession,
+  onDeleteSession,
+}) => {
   const [mcpOpen, setMcpOpen] = useState(false);
   const workiqEnabled = useSettingsStore(s => s.workiqEnabled);
   const toggleWorkiq = useSettingsStore(s => s.toggleWorkiq);
   const workiqModel = useSettingsStore(s => s.workiqModel);
   const setWorkiqModel = useSettingsStore(s => s.setWorkiqModel);
   const availableModels = useSettingsStore(s => s.availableModels);
-
   return (
     <div className="flex items-center justify-between border-b border-border bg-background px-3 py-1.5">
       <div className="flex items-center gap-2 min-w-0">
         <SkillPicker />
+        <SessionHistoryPicker
+          host={host}
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          onRestoreSession={onRestoreSession}
+          onDeleteSession={onDeleteSession}
+        />
       </div>
 
       <div className="flex items-center gap-0.5">
+        <PermissionManagerDialog />
         <div className="flex items-center">
           <button
             onClick={toggleWorkiq}
